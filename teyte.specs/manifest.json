@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "teyte.specs",
+  "name": "System Specs",
+  "version": "1.0.0",
+  "author": "teyte",
+  "description": "Fastfetch-style system specs rendered behind all windows on the bottom layer. Transparent background, customizable text color.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "DesktopSpecs.qml"
+  }
+}

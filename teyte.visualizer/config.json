@@ -1,0 +1,21 @@
+{
+  "fontScale": 0.018,
+  "fontFamily": "JetBrainsMono Nerd Font",
+  "fontWeight": 400,
+  "color": "#ffffff",
+  "bgColor": "#101315",
+  "bgOpacity": 0.85,
+  "padding": 18,
+  "opacity": 1.0,
+  "bars": 24,
+  "barWidth": 6,
+  "barGap": 4,
+  "maxBarHeight": 90,
+  "maxValue": 8000,
+  "xRatio": 0.25,
+  "yRatio": 0.4233,
+  "namespace": "teyte.visualizer",
+  "width": 240,
+  "xMargin": 30,
+  "fontSize": 14
+}

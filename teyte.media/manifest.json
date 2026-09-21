@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "teyte.media",
+  "name": "Media Controller",
+  "version": "1.0.0",
+  "author": "teyte",
+  "description": "Now-playing media display with playback controls rendered behind all windows.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Media.qml"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "teyte.calendar",
+  "name": "Calendar",
+  "version": "1.0.0",
+  "author": "teyte",
+  "description": "Terminal-style monthly calendar rendered behind all windows on the bottom layer.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Calendar.qml"
+  }
+}
