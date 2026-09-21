@@ -21,7 +21,7 @@ This is a monorepo, so `omarchy plugin add` (which expects a single plugin at
 the repo root) cannot install it directly. Instead:
 
 ```bash
-git clone https://github.com/teyte/teyte.plugins.git
+git clone https://github.com/Teytenator/teyte.plugins.git
 cd teyte.plugins
 ./install.sh
 omarchy plugin enable teyte.calendar
