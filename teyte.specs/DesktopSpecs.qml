@@ -22,6 +22,7 @@ Item {
     position: "center",
     xRatio: null,
     yRatio: null,
+    yOffset: 0,
     namespace: "teyte.specs"
   })
 
@@ -43,6 +44,8 @@ Item {
     ? Number(root.settings.yRatio)
     : (root.settings.position === "top" ? 0.25
       : root.settings.position === "bottom" ? 0.75 : 0.5)
+  readonly property real xOffset: root.num(root.settings.xOffset, 0)
+  readonly property real yOffset: root.num(root.settings.yOffset, 0)
   readonly property real specFontScale: root.num(root.settings.fontScale, 0.03)
   readonly property real specFontSize: root.num(root.settings.fontSize, 14)
   readonly property real specOpacity: root.num(root.settings.opacity, 1.0)
@@ -166,8 +169,8 @@ Item {
           text: root.specsText
           width: root.panelWidth
 
-          x: root.xMargin
-          y: surface.height * root.yRatio - height / 2
+          x: root.xMargin + root.xOffset
+          y: surface.height * root.yRatio - height / 2 + root.yOffset
         }
       }
     }

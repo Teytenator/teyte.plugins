@@ -13,5 +13,7 @@
   "width": 240,
   "xMargin": 30,
   "fontSize": 11,
-  "cellSize": 24
+  "cellSize": 24,
+  "xOffset": 0,
+  "yOffset": 0
 }

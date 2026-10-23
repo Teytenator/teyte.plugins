@@ -45,16 +45,18 @@ Item {
     ? "" : (root.settings.fontFamily ? root.settings.fontFamily : "JetBrainsMono Nerd Font")
   readonly property real xRatio: root.num(root.settings.xRatio, 0.75)
   readonly property real yRatio: root.num(root.settings.yRatio, 0.5)
+  readonly property real xOffset: root.num(root.settings.xOffset, 0)
+  readonly property real yOffset: root.num(root.settings.yOffset, 0)
 
   property var activePlayer: null
-  property string title: ""
-  property string artist: ""
-  property string album: ""
-  property bool isPlaying: false
+  property string title: "Title"
+  property string artist: "Artist"
+  property string album: "Album"
+  property bool isPlaying: true
   property real position: 0
-  property real length: 0
+  property real length: 200
   property string idleText: "Nothing playing"
-  property bool idle: root.title.length === 0 && root.artist.length === 0
+  property bool idle: false
 
   function updateFromPlayer(p) {
     if (!p) return
@@ -86,17 +88,20 @@ Item {
       var p = vals[i]
       if (p && p.trackTitle && p.trackTitle.length > 0) return p
     }
-    return vals[0]
+    return null
   }
 
   function refresh() {
     var p = root.findActivePlayer()
-    if (p && p !== root.activePlayer) {
-      root.activePlayer = p
-      p.trackChanged.connect(() => root.updateFromPlayer(root.findActivePlayer()))
-      p.isPlayingChanged.connect(() => root.updateFromPlayer(root.findActivePlayer()))
+    if (p) {
+      if (p !== root.activePlayer) {
+        root.activePlayer = p
+        p.trackChanged.connect(() => root.updateFromPlayer(root.findActivePlayer()))
+        p.isPlayingChanged.connect(() => root.updateFromPlayer(root.findActivePlayer()))
+      }
+      root.updateFromPlayer(root.activePlayer)
     }
-    root.updateFromPlayer(root.activePlayer)
+    // Keep placeholders when nothing is playing
   }
 
   Component.onCompleted: root.refresh()
@@ -154,8 +159,8 @@ Item {
 
         Item {
           id: mediaContent
-          x: root.xMargin
-          y: root.yRatio * surface.height - mediaCol.height / 2
+          x: root.xMargin + root.xOffset
+          y: root.yRatio * surface.height - mediaCol.height / 2 + root.yOffset
 
           Column {
             id: mediaCol
@@ -164,13 +169,13 @@ Item {
 
             Text {
               id: titleText
-              text: root.idle ? root.idleText : root.title
+              text: root.title
               color: root.specColor
               font.family: root.specFont
               font.weight: Font.Bold
               font.pixelSize: Math.max(8, root.specFontSize)
               font.hintingPreference: Font.PreferFullHinting
-              opacity: root.specOpacity * (root.idle ? 0.5 : 1.0)
+              opacity: root.specOpacity * 1.0
               wrapMode: Text.NoWrap
               width: root.panelWidth
               elide: Text.ElideRight
@@ -179,7 +184,7 @@ Item {
             Text {
               id: artistText
               text: root.artist
-              visible: !root.idle
+              visible: true
               color: root.specColor
               font.family: root.specFont
               font.pixelSize: Math.max(8, root.specFontSize)
@@ -193,7 +198,7 @@ Item {
             Text {
               id: albumText
               text: root.album
-              visible: text.length > 0
+              visible: true
               color: root.specColor
               font.family: root.specFont
               font.pixelSize: Math.max(8, root.specFontSize)

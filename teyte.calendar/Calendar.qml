@@ -19,6 +19,7 @@ Item {
     opacity: 1.0,
     xRatio: 0.25,
     yRatio: 0.75,
+    yOffset: 0,
     namespace: "teyte.calendar"
   })
 
@@ -45,6 +46,8 @@ Item {
     ? "" : (root.settings.fontFamily ? root.settings.fontFamily : "JetBrainsMono Nerd Font")
   readonly property real xRatio: root.num(root.settings.xRatio, 0.25)
   readonly property real yRatio: root.num(root.settings.yRatio, 0.75)
+  readonly property real xOffset: root.num(root.settings.xOffset, 0)
+  readonly property real yOffset: root.num(root.settings.yOffset, 0)
 
   readonly property date today: new Date()
   readonly property int todayDay: root.today.getDate()
@@ -78,7 +81,7 @@ Item {
   }
 
   Timer {
-    interval: 60000
+    interval: 2000
     repeat: true
     running: true
     onTriggered: {
@@ -114,8 +117,8 @@ Item {
 
         Grid {
           id: calendarGrid
-          x: root.xMargin + (root.panelWidth - width) / 2
-          y: root.yRatio * surface.height - height / 2
+          x: root.xMargin + (root.panelWidth - width) / 2 + root.xOffset
+          y: root.yRatio * surface.height - height / 2 + root.yOffset
           columns: 7
           spacing: surface.cellSpacing
 
@@ -167,7 +170,7 @@ Item {
           color: root.specBgColor
           opacity: Math.min(1, Math.max(0, root.specBgOpacity))
           radius: 12
-          x: root.xMargin - root.specPadding + 8
+          x: root.xMargin - root.specPadding + 8 + root.xOffset
           y: calendarGrid.y - root.specPadding
           width: root.panelWidth + root.specPadding * 2
           height: calendarGrid.height + root.specPadding * 2

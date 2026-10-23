@@ -47,6 +47,8 @@ Item {
     ? "" : (root.settings.fontFamily ? root.settings.fontFamily : "JetBrainsMono Nerd Font")
   readonly property real xRatio: root.num(root.settings.xRatio, 0.75)
   readonly property real yRatio: root.num(root.settings.yRatio, 0.75)
+  readonly property real xOffset: root.num(root.settings.xOffset, 0)
+  readonly property real yOffset: root.num(root.settings.yOffset, 0)
 
   readonly property string weatherCity: root.settings.city && root.settings.city.trim().length > 0 ? root.settings.city.trim() : "auto"
   readonly property string weatherUnits: root.settings.units === "imperial" ? "imperial" : "metric"
@@ -78,11 +80,19 @@ Item {
   }
 
   Timer {
-    interval: Math.max(60000, root.num(root.settings.refreshMinutes, 15) * 60000)
+    interval: 2000
     repeat: true
     running: true
     onTriggered: {
       if (!configProc.running) configProc.running = true
+    }
+  }
+
+  Timer {
+    interval: Math.max(60000, root.num(root.settings.refreshMinutes, 15) * 60000)
+    repeat: true
+    running: true
+    onTriggered: {
       root.gatherWeather()
     }
   }
@@ -95,6 +105,14 @@ Item {
       onStreamFinished: root.weatherText = String(text || "").trim()
     }
     Component.onCompleted: running = true
+  }
+
+  // Retry until we get data (e.g. network not up yet right after boot)
+  Timer {
+    interval: 30000
+    repeat: true
+    running: root.weatherText.length === 0
+    onTriggered: root.gatherWeather()
   }
 
   Variants {
@@ -135,8 +153,8 @@ Item {
           text: root.weatherText
           width: root.panelWidth
 
-          x: root.xMargin
-          y: root.yRatio * surface.height - height / 2
+          x: root.xMargin + root.xOffset
+          y: root.yRatio * surface.height - height / 2 + root.yOffset
         }
 
         Rectangle {

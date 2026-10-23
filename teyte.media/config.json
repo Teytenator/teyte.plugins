@@ -12,5 +12,7 @@
   "namespace": "teyte.media",
   "width": 240,
   "xMargin": 30,
-  "fontSize": 14
+  "fontSize": 14,
+  "xOffset": 0,
+  "yOffset": 0
 }
