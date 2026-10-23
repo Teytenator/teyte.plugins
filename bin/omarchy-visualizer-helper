@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Audio spectrum helper for the teyte.visualizer plugin.
+
+Usage: omarchy-visualizer-helper [cava-config] <bars>
+
+Captures the monitor of the default audio sink with parec, runs a small
+radix-2 FFT and prints one line of <bars> integers per frame.
+"""
+
+import cmath
+import math
+import os
+import subprocess
+import sys
+
+SAMPLE_RATE = 44100
+SAMPLE_BYTES = 2          # s16le
+FFT_SIZE = 2048
+F_LO = 40.0
+F_HI = 16000.0
+
+
+def default_monitor():
+    try:
+        sink = subprocess.run(
+            ["pactl", "get-default-sink"],
+            capture_output=True, text=True, timeout=3
+        ).stdout.strip()
+    except Exception:
+        sink = ""
+    if not sink:
+        try:
+            info = subprocess.run(
+                ["pactl", "info"], capture_output=True, text=True, timeout=3
+            ).stdout
+            for line in info.splitlines():
+                if line.startswith("Default Sink:"):
+                    sink = line.split(":", 1)[1].strip()
+                    break
+        except Exception:
+            sink = ""
+    return (sink + ".monitor") if sink else "@DEFAULT_MONITOR@"
+
+
+def fft(values):
+    n = len(values)
+    j = 0
+    a = list(values)
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j |= bit
+        if i < j:
+            a[i], a[j] = a[j], a[i]
+
+    length = 2
+    while length <= n:
+        ang = -2j * math.pi / length
+        wlen = cmath.exp(ang)
+        half = length >> 1
+        for i in range(0, n, length):
+            w = 1 + 0j
+            for k in range(half):
+                u = a[i + k]
+                v = a[i + k + half] * w
+                a[i + k] = u + v
+                a[i + k + half] = u - v
+                w *= wlen
+        length <<= 1
+    return a
+
+
+def band_edges(bars):
+    edges = []
+    for i in range(bars + 1):
+        frac = i / bars
+        f = F_LO * ((F_HI / F_LO) ** frac)
+        edges.append(min(FFT_SIZE // 2 - 1, max(1, int(f / (SAMPLE_RATE / FFT_SIZE)))))
+    # Guarantee strictly increasing edges so every bar owns at least one bin.
+    for i in range(1, len(edges)):
+        if edges[i] <= edges[i - 1]:
+            edges[i] = edges[i - 1] + 1
+    return edges
+
+
+def main():
+    bars = 24
+    if len(sys.argv) > 1:
+        try:
+            bars = int(sys.argv[-1])
+        except ValueError:
+            bars = 24
+    bars = max(4, bars)
+
+    window = [0.5 - 0.5 * math.cos(2 * math.pi * i / (FFT_SIZE - 1))
+              for i in range(FFT_SIZE)]
+    edges = band_edges(bars)
+    monitor = default_monitor()
+
+    cmd = [
+        "parec", "--raw",
+        "--format=s16le",
+        "--rate=%d" % SAMPLE_RATE,
+        "--channels=1",
+        "--latency-msec=20",
+        "--device=%s" % monitor,
+    ]
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return 0
+
+    block = FFT_SIZE * SAMPLE_BYTES
+    out = sys.stdout
+
+    try:
+        while True:
+            data = proc.stdout.read(block)
+            if not data or len(data) < block:
+                break
+            samples = [int.from_bytes(data[i:i + 2], "little", signed=True)
+                       for i in range(0, block, 2)]
+
+            spectrum = fft([samples[i] * window[i] for i in range(FFT_SIZE)])
+
+            values = []
+            for b in range(bars):
+                lo, hi = edges[b], edges[b + 1]
+                peak = 0.0
+                for k in range(lo, min(hi, FFT_SIZE // 2)):
+                    mag = abs(spectrum[k])
+                    if mag > peak:
+                        peak = mag
+                # Mild log scaling keeps quiet detail visible.
+                v = math.log1p(peak) * 900.0
+                values.append(int(min(32000, v)))
+
+            out.write(" ".join(str(v) for v in values) + "\n")
+            out.flush()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

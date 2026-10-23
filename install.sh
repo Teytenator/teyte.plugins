@@ -28,3 +28,18 @@ if (( installed )); then
 else
   echo "Nothing to install."
 fi
+# Install helper scripts used by plugins
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+for helper in "$REPO_DIR/bin/"*; do
+  [ -f "$helper" ] || continue
+  name="$(basename "$helper")"
+  target="$BIN_DIR/$name"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    echo "skip   $name (already exists in $BIN_DIR)"
+    continue
+  fi
+  cp -a "$helper" "$target"
+  chmod +x "$target"
+  echo "added  $name -> $target"
+done

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Gather a short, fastfetch-style system summary for the teyte.specs plugin.
+# Prints plain text (no ANSI), one line per entry.
+
+set -uo pipefail
+
+trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+
+fit() { # fit <text> <max> -> truncated with ellipsis
+  local s="$1" max="${2:-30}"
+  if ((${#s} > max)); then printf '%s…' "${s:0:max-1}"; else printf '%s' "$s"; fi
+}
+
+line() { printf '%-8s %s\n' "$1" "$2"; }
+
+user="$(id -un 2>/dev/null || echo user)"
+host="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo host)"
+
+os="unknown"
+if [[ -r /etc/os-release ]]; then
+  os="$(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-${NAME:-unknown}}")"
+fi
+
+kernel="$(uname -r 2>/dev/null)"
+uptime_s="$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)"
+days=$((uptime_s / 86400))
+hours=$(((uptime_s % 86400) / 3600))
+mins=$(((uptime_s % 3600) / 60))
+if ((days > 0)); then uptime_str="${days}d ${hours}h"; elif ((hours > 0)); then uptime_str="${hours}h ${mins}m"; else uptime_str="${mins}m"; fi
+
+wm="unknown"
+if command -v hyprctl >/dev/null 2>&1; then
+  ver="$(hyprctl version 2>/dev/null | awk '/^Hyprland /{print $2; exit}')"
+  [[ -n ${ver:-} ]] && wm="Hyprland ${ver}"
+fi
+
+cpu="$(lscpu 2>/dev/null | awk -F: '/^Model name:/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}')"
+cores="$(nproc 2>/dev/null)"
+[[ -n ${cpu:-} && -n ${cores:-} ]] && cpu="${cpu} (${cores}c)"
+
+gpu="$(lspci 2>/dev/null | awk -F': ' '/VGA compatible controller|3D controller/{print $2; exit}')"
+gpu="$(printf '%s' "${gpu:-}" | sed -e 's/\[[^]]*\]//g' -e 's/ (rev ..)//' -e 's/Corporation //' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+mem="$(free -b 2>/dev/null | awk '/^Mem:/{printf "%.1f/%.1f GiB %d%%", $3/1073741824, $2/1073741824, ($3*100)/$2}')"
+
+disk="$(df -B1 / 2>/dev/null | awk 'NR==2{printf "%.1f/%.1f GiB %d%%", $3/1073741824, ($3+$4)/1073741824, ($3*100)/($3+$4)}')"
+
+battery=""
+for bat in /sys/class/power_supply/BAT*; do
+  [[ -r $bat/capacity ]] || continue
+  cap="$(cat "$bat/capacity" 2>/dev/null)"
+  state="$(cat "$bat/status" 2>/dev/null)"
+  battery="${cap}%${state:+ ${state}}"
+  break
+done
+
+printf ' %s@%s\n' "$user" "$host"
+printf ' %s\n' "────────────────────────────"
+line "OS" "$(fit "$os" 28)"
+line "Kernel" "$(fit "$kernel" 28)"
+line "Uptime" "$uptime_str"
+line "WM" "$(fit "$wm" 28)"
+line "CPU" "$(fit "$cpu" 28)"
+[[ -n ${gpu:-} ]] && line "GPU" "$(fit "$gpu" 28)"
+[[ -n ${mem:-} ]] && line "Memory" "$(fit "$mem" 28)"
+[[ -n ${disk:-} ]] && line "Disk" "$(fit "$disk" 28)"
+[[ -n ${battery:-} ]] && line "Battery" "$(fit "$battery" 28)"
+
+exit 0

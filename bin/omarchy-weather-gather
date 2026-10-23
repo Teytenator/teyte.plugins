@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Weather summary for the teyte.weather plugin.
+# Usage: omarchy-weather-gather [city|auto] [metric|imperial]
+# Prints plain text, one line per entry. Prints nothing on failure.
+
+set -uo pipefail
+
+city="${1:-auto}"
+units="${2:-metric}"
+
+case "$units" in
+  imperial) uflag="u" ;;
+  *) uflag="m" ;;
+esac
+
+loc=""
+[[ -n ${city:-} && ${city} != auto ]] && loc="$(printf '%s' "$city" | sed 's/ /+/g')"
+
+url="https://wttr.in/${loc}?format=j1&${uflag}"
+
+json="$(curl -fsS -m 12 "$url" 2>/dev/null)" || exit 0
+[[ -z $json ]] && exit 0
+
+if ! command -v jq >/dev/null 2>&1; then
+  exit 0
+fi
+
+area="$(printf '%s' "$json" | jq -r '.nearest_area[0] | "\(.areaName[0].value), \(.country[0].value)"' 2>/dev/null)"
+desc="$(printf '%s' "$json" | jq -r '.current_condition[0].weatherDesc[0].value' 2>/dev/null)"
+temp="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .temp_C then "\(.temp_C)" else empty end' 2>/dev/null)"
+feels="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .FeelsLikeC then "\(.FeelsLikeC)" else empty end' 2>/dev/null)"
+hum="$(printf '%s' "$json" | jq -r '.current_condition[0].humidity' 2>/dev/null)"
+wind="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .windspeedKmph then "\(.windspeedKmph)km/h" else empty end' 2>/dev/null)"
+
+if [[ $uflag == u ]]; then
+  temp="$(printf '%s' "$json" | jq -r '.current_condition[0].temp_F' 2>/dev/null)"
+  feels="$(printf '%s' "$json" | jq -r '.current_condition[0].FeelsLikeF' 2>/dev/null)"
+  wind="$(printf '%s' "$json" | jq -r '.current_condition[0] | "\(.windspeedMiles)mph"' 2>/dev/null)"
+  sym="°F"
+else
+  sym="°C"
+fi
+
+[[ -z ${area:-} ]] && exit 0
+
+if ((${#desc} > 24)); then desc="${desc:0:23}…"; fi
+
+printf '%s\n' "$area"
+[[ -n ${desc:-} ]] && printf '%s\n' "$desc"
+if [[ -n ${temp:-} ]]; then
+  if [[ -n ${feels:-} && ${feels} != "${temp}" ]]; then
+    printf '%s%s · feels %s%s\n' "$temp" "$sym" "$feels" "$sym"
+  else
+    printf '%s%s\n' "$temp" "$sym"
+  fi
+fi
+
+humidity_part=""
+[[ -n ${hum:-} ]] && humidity_part="💧 ${hum}%"
+wind_part=""
+[[ -n ${wind:-} ]] && wind_part="🌬 ${wind}"
+printf '%s  %s\n' "$humidity_part" "$wind_part" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+
+exit 0
