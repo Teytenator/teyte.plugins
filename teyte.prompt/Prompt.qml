@@ -12,6 +12,8 @@ Item {
   readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/plugins/teyte.prompt/config.json"
   readonly property string historyPath: Quickshell.env("HOME") + "/.local/state/teyte.prompt/history.txt"
   readonly property string cwdHelper: Quickshell.env("HOME") + "/.local/bin/teyte-prompt-cwd"
+  readonly property string calcHelper: Quickshell.env("HOME") + "/.local/bin/teyte-prompt-calc"
+  readonly property string noteHelper: Quickshell.env("HOME") + "/.local/bin/teyte-prompt-note"
 
   readonly property var defaults: ({
     fontFamily: "JetBrainsMono Nerd Font",
@@ -31,6 +33,8 @@ Item {
     cwd: "auto",
     placeholder: "Ask the agent what to do or build…",
     historyLimit: 50,
+    modesEnabled: true,
+    notePath: "~/inbox.md",
     namespace: "teyte.prompt"
   })
 
@@ -42,6 +46,7 @@ Item {
   property var history: []
   property int historyIndex: -1
   property string pendingPrompt: ""
+  property string pendingKind: "agent"
   property string resolvedCwd: ""
   property bool _historyLoaded: false
 
@@ -78,13 +83,68 @@ Item {
   readonly property real paletteYRatio: root.num(root.settings.paletteYRatio, 0.28)
   readonly property real hintHeight: Math.max(12, root.specFontSize * 1.4)
   readonly property color hintColor: Qt.rgba(root.specColor.r, root.specColor.g, root.specColor.b, 0.42)
+  readonly property color errorColor: Qt.rgba(1.0, 0.45, 0.4, 0.95)
+
+  readonly property bool modesEnabled: root.settings.modesEnabled !== false
+  readonly property string notePath: {
+    var p = String(root.settings.notePath || "~/inbox.md")
+    if (p === "~") return Quickshell.env("HOME")
+    if (p.indexOf("~/") === 0) return Quickshell.env("HOME") + p.substring(1)
+    return p
+  }
+  readonly property string activeMode: root.modeOf(input.text)
+  readonly property string modeGlyph: root.activeMode === "shell" ? "$"
+    : root.activeMode === "note" ? "✎"
+    : root.activeMode === "calc" ? "="
+    : "❯"
+  readonly property string modeHint: {
+    if (root.statusText.length > 0) return root.statusText
+    if (root.activeMode === "shell") return "Enter ↵ run   ·   Esc close"
+    if (root.activeMode === "note") return "Enter ↵ save note   ·   Esc close"
+    if (root.activeMode === "calc") return "Enter ↵ copy result   ·   Esc close"
+    return "Enter ↵ launch   ·   Esc close   ·   ↑↓ history"
+  }
+  readonly property string modeSummary: {
+    if (root.activeMode === "note") return "note · " + root.notePath
+    if (root.activeMode === "calc") return "calc · + − * / ** sqrt() pi"
+    var cwd = String(root.settings.cwd || "auto")
+    if (root.activeMode === "shell") return "shell · " + (cwd === "auto" ? "focused dir" : cwd)
+    var agent = String(root.settings.agent || "opencode")
+    return agent + " · " + (cwd === "auto" ? "focused dir" : cwd)
+  }
+
+  function modeOf(raw) {
+    var t = String(raw === undefined || raw === null ? "" : raw)
+    if (!root.modesEnabled || t.length === 0) return "agent"
+    var c = t.charAt(0)
+    if (c === ">") return "shell"
+    if (c === ":") return "note"
+    if (c === "=") return "calc"
+    return "agent"
+  }
+
+  function queryOf(raw) {
+    var t = String(raw === undefined || raw === null ? "" : raw).trim()
+    var mode = root.modeOf(t)
+    if (mode !== "agent") return t.substring(1).trim()
+    if (t.charAt(0) === "?") return t.substring(1).trim()
+    return t
+  }
 
   function open(payloadJson) {
+    var prefill = ""
+    if (payloadJson) {
+      try {
+        var payload = typeof payloadJson === "string" ? JSON.parse(payloadJson) : payloadJson
+        if (payload && typeof payload.text === "string") prefill = payload.text
+      } catch (e) {}
+    }
     root.opened = true
     root.statusText = ""
     root.historyIndex = -1
     root.loadHistory()
-    input.text = ""
+    input.text = prefill
+    input.cursorPosition = prefill.length
     Qt.callLater(function() { input.forceActiveFocus() })
   }
 
@@ -99,13 +159,29 @@ Item {
   }
 
   function submit() {
-    var text = String(input.text || "").trim()
-    if (text.length === 0) {
+    var typed = String(input.text || "")
+    var forceAgent = typed.length > 0 && typed.charAt(0) === " "
+    var raw = typed.trim()
+    if (raw.length === 0) {
       root.dismiss()
       return
     }
-    root.pushHistory(text)
-    root.launch(text)
+    var mode = forceAgent ? "agent" : root.modeOf(raw)
+    var query = forceAgent ? raw : root.queryOf(raw)
+    if (query.length === 0) {
+      root.statusText = "Type something after " + raw.charAt(0)
+      return
+    }
+    root.pushHistory(typed.length > 0 ? typed : raw)
+    if (mode === "calc") {
+      root.runCalc(query)
+      return
+    }
+    if (mode === "note") {
+      root.saveNote(query)
+      return
+    }
+    root.resolveAndLaunch(mode, query)
     root.dismiss()
   }
 
@@ -150,7 +226,8 @@ Item {
     historyAddProc.running = true
   }
 
-  function launch(text) {
+  function resolveAndLaunch(kind, text) {
+    root.pendingKind = kind
     root.pendingPrompt = text
     var cwd = String(root.settings.cwd || "auto")
     if (cwd === "auto") {
@@ -172,20 +249,60 @@ Item {
     var fallback = Quickshell.env("HOME") + "/Work"
     var target = (dir && String(dir).trim().length > 0) ? String(dir).trim() : fallback
     var terminal = String(root.settings.terminal || "foot")
-    var agent = String(root.settings.agent || "opencode")
     var args = []
     args.push(terminal)
     args.push("-e")
-    args.push(agent)
-    var extra = root.settings.agentArgs
-    if (extra && extra.length) {
-      for (var i = 0; i < extra.length; i++) args.push(String(extra[i]))
+    if (root.pendingKind === "shell") {
+      args.push("bash")
+      args.push("-lc")
+      args.push(root.pendingPrompt + "\nexec bash")
+    } else {
+      var agent = String(root.settings.agent || "opencode")
+      args.push(agent)
+      var extra = root.settings.agentArgs
+      if (extra && extra.length) {
+        for (var i = 0; i < extra.length; i++) args.push(String(extra[i]))
+      }
+      args.push("--prompt")
+      args.push(root.pendingPrompt)
     }
-    args.push("--prompt")
-    args.push(root.pendingPrompt)
     launcher.workingDirectory = target
     launcher.command = args
     launcher.running = true
+  }
+
+  function runCalc(expr) {
+    root.statusText = ""
+    calcProc.used = false
+    calcProc.command = [root.calcHelper, expr]
+    calcProc.running = true
+  }
+
+  function finishCalc(result) {
+    root.statusText = ""
+    copyProc.command = ["wl-copy", result]
+    copyProc.running = true
+    root.notify("Calc: " + result)
+    root.dismiss()
+  }
+
+  function failCalc() {
+    root.statusText = "Invalid expression — try 12*8+3, sqrt(2), or pi"
+  }
+
+  function saveNote(text) {
+    root.statusText = ""
+    noteProc.command = [root.noteHelper, root.notePath, text]
+    noteProc.running = true
+    root.dismiss()
+  }
+
+  function notify(headline, body) {
+    if (notifyProc.running) return
+    notifyProc.command = body
+      ? ["omarchy-notification-send", "-u", "low", headline, body]
+      : ["omarchy-notification-send", "-u", "low", headline]
+    notifyProc.running = true
   }
 
   Process {
@@ -236,6 +353,39 @@ Item {
 
   Process {
     id: launcher
+    command: ["true"]
+  }
+
+  Process {
+    id: calcProc
+    property bool used: false
+    command: ["true"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (calcProc.used) return
+        calcProc.used = true
+        var result = String(text || "").trim()
+        if (result.length > 0) root.finishCalc(result)
+        else root.failCalc()
+      }
+    }
+  }
+
+  Process {
+    id: copyProc
+    command: ["true"]
+  }
+
+  Process {
+    id: noteProc
+    command: ["true"]
+    onExited: function(exitCode) {
+      if (exitCode === 0) root.notify("Note saved", root.notePath)
+    }
+  }
+
+  Process {
+    id: notifyProc
     command: ["true"]
   }
 
@@ -295,13 +445,14 @@ Item {
 
           Text {
             id: glyph
-            text: "❯"
+            text: root.modeGlyph
             color: root.specAccent
             font.family: root.specFont
             font.pixelSize: root.specFontSize
             font.bold: true
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(implicitWidth, root.specFontSize * 1.2)
           }
 
           Text {
@@ -327,6 +478,7 @@ Item {
             selectByMouse: true
             clip: true
             focus: true
+            onTextEdited: root.statusText = ""
             cursorDelegate: Rectangle {
               width: Math.max(6, root.specFontSize * 0.5)
               height: root.specFontSize * 1.2
@@ -354,29 +506,28 @@ Item {
         Text {
           id: hint
           anchors.left: parent.left
-          anchors.right: parent.right
+          anchors.right: summary.left
+          anchors.rightMargin: 12
           anchors.top: inputRow.bottom
           anchors.topMargin: 8
           height: root.hintHeight
           verticalAlignment: Text.AlignVCenter
-          text: "Enter ↵ launch   ·   Esc close   ·   ↑↓ history"
-          color: root.hintColor
+          text: root.modeHint
+          color: root.statusText.length > 0 ? root.errorColor : root.hintColor
           font.family: root.specFont
           font.pixelSize: Math.max(9, root.specFontSize * 0.72)
           opacity: root.specOpacity
+          elide: Text.ElideRight
         }
 
         Text {
+          id: summary
           anchors.right: parent.right
           anchors.top: inputRow.bottom
           anchors.topMargin: 8
           height: root.hintHeight
           verticalAlignment: Text.AlignVCenter
-          text: {
-            var agent = String(root.settings.agent || "opencode")
-            var cwd = String(root.settings.cwd || "auto")
-            return agent + " · " + (cwd === "auto" ? "focused dir" : cwd)
-          }
+          text: root.modeSummary
           color: root.hintColor
           font.family: root.specFont
           font.pixelSize: Math.max(9, root.specFontSize * 0.72)

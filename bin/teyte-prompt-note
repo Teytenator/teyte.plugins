@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Append a timestamped line to a markdown note file.
+set -uo pipefail
+
+file="${1:?usage: teyte-prompt-note <file> <text>}"
+text="${2:-}"
+file="${file/#\~/$HOME}"
+
+mkdir -p "$(dirname "$file")"
+printf -- '- %s %s\n' "$(date +%H:%M)" "$text" >>"$file"

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "teyte.todo",
+  "name": "Todo",
+  "version": "1.0.0",
+  "author": "teyte",
+  "description": "Markdown task list rendered on the desktop. Click a task to toggle it.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Todo.qml"
+  }
+}

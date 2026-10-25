@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Evaluate an arithmetic expression safely (no eval) and print the result."""
+import ast
+import math
+import operator
+import sys
+
+BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+FUNCS = {
+    name: getattr(math, name)
+    for name in dir(math)
+    if not name.startswith("_")
+}
+FUNCS.update({"abs": abs, "round": round, "min": min, "max": max})
+CONSTS = {"pi": math.pi, "e": math.e, "tau": math.tau}
+
+
+def evaluate(node):
+    if isinstance(node, ast.Expression):
+        return evaluate(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in BIN_OPS:
+        return BIN_OPS[type(node.op)](evaluate(node.left), evaluate(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in UNARY_OPS:
+        return UNARY_OPS[type(node.op)](evaluate(node.operand))
+    if isinstance(node, ast.Name) and node.id in CONSTS:
+        return CONSTS[node.id]
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in FUNCS
+        and not node.keywords
+    ):
+        return FUNCS[node.func.id](*[evaluate(arg) for arg in node.args])
+    raise ValueError("unsupported expression")
+
+
+def main():
+    if len(sys.argv) < 2 or not sys.argv[1].strip():
+        return 1
+    try:
+        value = evaluate(ast.parse(sys.argv[1], mode="eval"))
+    except Exception:
+        return 1
+    if isinstance(value, float):
+        if value.is_integer() and abs(value) < 1e15:
+            value = int(value)
+        else:
+            print(f"{value:.10g}")
+            return 0
+    print(value)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

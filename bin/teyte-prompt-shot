@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Capture a screen region and open the agent palette prefilled with the image
+# path and any text OCR can read from it.
+#
+# Usage: teyte-prompt-shot [geometry]
+#   geometry is slurp's "X,Y WxH"; omitted = interactive region picker.
+set -uo pipefail
+
+outdir="${XDG_CACHE_HOME:-$HOME/.cache}/teyte.prompt"
+mkdir -p "$outdir"
+
+geom="${1:-}"
+if [[ -z ${geom} ]]; then
+  command -v omarchy-capture-region >/dev/null 2>&1 || exit 0
+  geom="$(omarchy-capture-region smart 2>/dev/null)" || exit 0
+  [[ -n ${geom} ]] || exit 0
+fi
+
+file="$outdir/shot-$(date +%Y%m%d-%H%M%S).png"
+grim -g "$geom" "$file" 2>/dev/null || exit 1
+
+ocr=""
+if command -v tesseract >/dev/null 2>&1; then
+  ocr="$(tesseract "$file" - 2>/dev/null | tr '\n' ' ' | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//')"
+fi
+
+prompt="Screenshot: $file"
+if [[ -n ${ocr} ]]; then
+  prompt+=" — text: ${ocr:0:800}"
+fi
+
+payload="$(jq -n --arg t "$prompt" '{text:$t}')"
+omarchy-shell shell summon teyte.prompt "$payload" >/dev/null 2>&1 || true

@@ -1,0 +1,19 @@
+{
+  "path": "~/todo.md",
+  "maxItems": 12,
+  "showCompleted": true,
+  "fontFamily": "JetBrainsMono Nerd Font",
+  "fontSize": 14,
+  "color": "#ffffff",
+  "accentColor": "#66ccff",
+  "bgColor": "#000000",
+  "bgOpacity": 1.0,
+  "opacity": 1.0,
+  "padding": 16,
+  "width": 320,
+  "xRatio": 0.25,
+  "yRatio": 0.2,
+  "xOffset": 0,
+  "yOffset": 0,
+  "namespace": "teyte.todo"
+}

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Toggle the first markdown checkbox line whose text matches exactly.
+#
+# Usage: teyte-todo-toggle <file> <task text>
+set -uo pipefail
+
+file="${1:?usage: teyte-todo-toggle <file> <task text>}"
+task="${2:-}"
+file="${file/#\~/$HOME}"
+
+[[ -f $file ]] || exit 1
+
+python3 - "$file" "$task" <<'PY'
+import re
+import sys
+
+path, task = sys.argv[1], sys.argv[2].strip()
+pattern = re.compile(r"^(\s*[-*]\s+\[)([ xX])(\]\s+)(.*)$")
+
+with open(path, encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+
+for index, line in enumerate(lines):
+    match = pattern.match(line)
+    if match and match.group(4).strip() == task:
+        mark = " " if match.group(2).lower() == "x" else "x"
+        lines[index] = f"{match.group(1)}{mark}{match.group(3)}{match.group(4)}"
+        break
+else:
+    sys.exit(2)
+
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines) + "\n")
+PY

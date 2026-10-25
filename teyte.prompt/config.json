@@ -17,6 +17,8 @@
   "placeholder": "Ask the agent what to do or build…",
   "barLabel": "❯ ask agent…",
   "historyLimit": 50,
+  "modesEnabled": true,
+  "notePath": "~/inbox.md",
   "xRatio": 0.5,
   "yRatio": 0.93,
   "xOffset": 0,
