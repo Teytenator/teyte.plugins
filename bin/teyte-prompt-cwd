@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# teyte-prompt-cwd — resolve a working directory for the agent prompt palette.
+#
+# Usage: teyte-prompt-cwd <fallback> [home-fallback]
+#
+# Prints the current working directory of the focused Hyprland window when it
+# is usable, otherwise the first fallback that exists, otherwise $HOME.
+set -uo pipefail
+
+fallback="${1:-$HOME/Work}"
+home_fallback="${2:-$HOME}"
+
+pid=""
+if command -v hyprctl >/dev/null 2>&1; then
+  if command -v jq >/dev/null 2>&1; then
+    pid="$(hyprctl activewindow -j 2>/dev/null | jq -r '.pid // empty' 2>/dev/null || true)"
+  else
+    pid="$(hyprctl activewindow -j 2>/dev/null | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n1)"
+  fi
+fi
+
+if [[ -n ${pid:-} && -d /proc/${pid}/cwd ]]; then
+  dir="$(readlink -f "/proc/${pid}/cwd" 2>/dev/null || true)"
+  if [[ -n ${dir:-} && -d ${dir:-} && ${dir} != "/" && ${dir} != /usr && ${dir} != /usr/bin && ${dir} != /usr/local/bin ]]; then
+    printf '%s\n' "$dir"
+    exit 0
+  fi
+fi
+
+if [[ -d ${fallback:-} ]]; then
+  printf '%s\n' "$fallback"
+elif [[ -d ${home_fallback:-} ]]; then
+  printf '%s\n' "$home_fallback"
+else
+  printf '%s\n' "$HOME"
+fi

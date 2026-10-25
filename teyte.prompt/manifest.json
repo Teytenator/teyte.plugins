@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "teyte.prompt",
+  "name": "Agent Prompt",
+  "version": "1.0.0",
+  "author": "teyte",
+  "description": "Spotlight-style prompt palette that launches your coding agent in a terminal. Click the desktop bar or hit the keybind, type, press Enter.",
+  "kinds": ["overlay", "service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Prompt.qml",
+    "service": "PromptBar.qml"
+  }
+}
