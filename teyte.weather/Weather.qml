@@ -6,15 +6,15 @@ import QtQuick
 Item {
   id: root
 
-  readonly property string configPath: Quickshell.env("HOME") + "/.config/teyte.weather/config.json"
+  readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/plugins/teyte.weather/config.json"
 
   readonly property var defaults: ({
     fontScale: 0.016,
     fontFamily: "JetBrainsMono Nerd Font",
     fontWeight: 400,
     color: "#ffffff",
-    bgColor: "#05182e",
-    bgOpacity: 0.85,
+    bgColor: "#000000",
+    bgOpacity: 1.0,
     padding: 18,
     opacity: 1.0,
     city: "auto",
@@ -38,8 +38,8 @@ Item {
   readonly property real specFontSize: root.num(root.settings.fontSize, 14)
   readonly property real specOpacity: root.num(root.settings.opacity, 1.0)
   readonly property color specColor: Qt.color(root.settings.color || "#ffffff")
-  readonly property color specBgColor: Qt.color(root.settings.bgColor || "#05182e")
-  readonly property real specBgOpacity: root.num(root.settings.bgOpacity, 0.85)
+  readonly property color specBgColor: Qt.color(root.settings.bgColor || "#000000")
+  readonly property real specBgOpacity: root.num(root.settings.bgOpacity, 1.0)
   readonly property real specPadding: root.num(root.settings.padding, 18)
   readonly property real panelWidth: root.num(root.settings.width, 340)
   readonly property real xMargin: root.num(root.settings.xMargin, 30)
@@ -161,7 +161,7 @@ Item {
           id: weatherPanel
           color: root.specBgColor
           opacity: Math.min(1, Math.max(0, root.specBgOpacity))
-          radius: 12
+          radius: 0
           x: weatherTextDisplay.x - root.specPadding + 8
           y: weatherTextDisplay.y - root.specPadding
           width: weatherTextDisplay.width + root.specPadding * 2

@@ -6,15 +6,15 @@ import QtQuick
 Item {
   id: root
 
-  readonly property string configPath: Quickshell.env("HOME") + "/.config/teyte.visualizer/config.json"
+  readonly property string configPath: Quickshell.env("HOME") + "/.config/omarchy/plugins/teyte.visualizer/config.json"
 
   readonly property var defaults: ({
     fontScale: 0.018,
     fontFamily: "JetBrainsMono Nerd Font",
     fontWeight: 400,
     color: "#ffffff",
-    bgColor: "#05182e",
-    bgOpacity: 0.85,
+    bgColor: "#000000",
+    bgOpacity: 1.0,
     padding: 18,
     opacity: 1.0,
     bars: 24,
@@ -39,8 +39,8 @@ Item {
   readonly property real specFontScale: root.num(root.settings.fontScale, 0.018)
   readonly property real specOpacity: root.num(root.settings.opacity, 1.0)
   readonly property color specColor: Qt.color(root.settings.color || "#ffffff")
-  readonly property color specBgColor: Qt.color(root.settings.bgColor || "#05182e")
-  readonly property real specBgOpacity: root.num(root.settings.bgOpacity, 0.85)
+  readonly property color specBgColor: Qt.color(root.settings.bgColor || "#000000")
+  readonly property real specBgOpacity: root.num(root.settings.bgOpacity, 1.0)
   readonly property real specPadding: root.num(root.settings.padding, 18)
   readonly property real panelWidth: root.num(root.settings.width, 340)
   readonly property real xMargin: root.num(root.settings.xMargin, 30)
@@ -165,7 +165,7 @@ Item {
           id: bgPanel
           color: root.specBgColor
           opacity: Math.min(1, Math.max(0, root.specBgOpacity))
-          radius: 12
+          radius: 0
           x: root.xMargin - root.specPadding + 8 + root.xOffset
           y: root.yRatio * surface.height - height / 2 + root.yOffset
           width: root.panelWidth + root.specPadding * 2
