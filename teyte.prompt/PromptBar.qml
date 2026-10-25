@@ -66,7 +66,6 @@ Item {
   readonly property real yRatio: root.num(root.settings.yRatio, 0.93)
   readonly property real xOffset: root.num(root.settings.xOffset, 0)
   readonly property real yOffset: root.num(root.settings.yOffset, 0)
-  readonly property color accentSoft: Qt.rgba(root.specAccent.r, root.specAccent.g, root.specAccent.b, 0.42)
 
   function openPalette() {
     if (root.shell && typeof root.shell.summon === "function") {
@@ -127,8 +126,6 @@ Item {
           radius: root.specRadius
           color: root.specBgColor
           opacity: root.specOpacity * (root.hovered ? Math.max(0.85, root.specBgOpacity) : root.specBgOpacity)
-          border.width: 1
-          border.color: root.hovered ? root.specAccent : root.accentSoft
 
           Text {
             id: label

@@ -78,7 +78,6 @@ Item {
   readonly property real paletteYRatio: root.num(root.settings.paletteYRatio, 0.28)
   readonly property real hintHeight: Math.max(12, root.specFontSize * 1.4)
   readonly property color hintColor: Qt.rgba(root.specColor.r, root.specColor.g, root.specColor.b, 0.42)
-  readonly property color accentSoft: Qt.rgba(root.specAccent.r, root.specAccent.g, root.specAccent.b, 0.42)
 
   function open(payloadJson) {
     root.opened = true
@@ -275,8 +274,6 @@ Item {
       color: root.specBgColor
       opacity: root.specBgOpacity
       radius: root.specRadius
-      border.width: 1
-      border.color: root.accentSoft
 
       MouseArea {
         anchors.fill: parent
