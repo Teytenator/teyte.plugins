@@ -10,7 +10,7 @@ Omarchy shell plugins by teyte, rendered behind all windows on the bottom layer.
 | `teyte.media` | Now-playing media display with playback controls |
 | `teyte.specs` | Fastfetch-style system specs |
 | `teyte.visualizer` | Real-time audio spectrum visualizer |
-| `teyte.weather` | Current weather conditions |
+| `teyte.weather` | Current weather conditions from Open-Meteo |
 | `teyte.todo` | Markdown task list — click a task to check it off |
 | `teyte.prompt` | Agent prompt palette — click the desktop bar or press `Super+Ctrl+/`, type a request, and opencode launches in a terminal. Prefixes turn it into a shell runner, note taker, or calculator |
 

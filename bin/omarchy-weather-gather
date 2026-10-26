@@ -8,57 +8,151 @@ set -uo pipefail
 city="${1:-auto}"
 units="${2:-metric}"
 
+command -v curl >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
 case "$units" in
-  imperial) uflag="u" ;;
-  *) uflag="m" ;;
+  imperial)
+    temp_unit="fahrenheit"
+    wind_unit="mph"
+    wind_label="mph"
+    sym="°F"
+    ;;
+  *)
+    temp_unit="celsius"
+    wind_unit="kmh"
+    wind_label="km/h"
+    sym="°C"
+    ;;
 esac
 
-loc=""
-[[ -n ${city:-} && ${city} != auto ]] && loc="$(printf '%s' "$city" | sed 's/ /+/g')"
+lat=""
+lon=""
+label=""
 
-url="https://wttr.in/${loc}?format=j1&${uflag}"
+# Get coordinates and a readable place name from wttr.in. This is only used as
+# a fallback when the primary geolocation service cannot answer.
+wttr_location() {
+  local query="${1:-}" json loc
+  local url="https://wttr.in/?format=j1"
 
-json="$(curl -fsS -m 12 "$url" 2>/dev/null)" || exit 0
-[[ -z $json ]] && exit 0
-
-if ! command -v jq >/dev/null 2>&1; then
-  exit 0
-fi
-
-area="$(printf '%s' "$json" | jq -r '.nearest_area[0] | "\(.areaName[0].value), \(.country[0].value)"' 2>/dev/null)"
-desc="$(printf '%s' "$json" | jq -r '.current_condition[0].weatherDesc[0].value' 2>/dev/null)"
-temp="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .temp_C then "\(.temp_C)" else empty end' 2>/dev/null)"
-feels="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .FeelsLikeC then "\(.FeelsLikeC)" else empty end' 2>/dev/null)"
-hum="$(printf '%s' "$json" | jq -r '.current_condition[0].humidity' 2>/dev/null)"
-wind="$(printf '%s' "$json" | jq -r '.current_condition[0] | if .windspeedKmph then "\(.windspeedKmph)km/h" else empty end' 2>/dev/null)"
-
-if [[ $uflag == u ]]; then
-  temp="$(printf '%s' "$json" | jq -r '.current_condition[0].temp_F' 2>/dev/null)"
-  feels="$(printf '%s' "$json" | jq -r '.current_condition[0].FeelsLikeF' 2>/dev/null)"
-  wind="$(printf '%s' "$json" | jq -r '.current_condition[0] | "\(.windspeedMiles)mph"' 2>/dev/null)"
-  sym="°F"
-else
-  sym="°C"
-fi
-
-[[ -z ${area:-} ]] && exit 0
-
-if ((${#desc} > 24)); then desc="${desc:0:23}…"; fi
-
-printf '%s\n' "$area"
-[[ -n ${desc:-} ]] && printf '%s\n' "$desc"
-if [[ -n ${temp:-} ]]; then
-  if [[ -n ${feels:-} && ${feels} != "${temp}" ]]; then
-    printf '%s%s · feels %s%s\n' "$temp" "$sym" "$feels" "$sym"
-  else
-    printf '%s%s\n' "$temp" "$sym"
+  if [[ -n $query ]]; then
+    query="$(printf '%s' "$query" | jq -rn --arg v "$query" '$v|@uri' 2>/dev/null)" || return 1
+    url="https://wttr.in/${query}?format=j1"
   fi
+
+  json="$(curl -fsS -m 12 "$url" 2>/dev/null)" || return 1
+  loc="$(printf '%s' "$json" | jq -r \
+    '.nearest_area[0]? | [.latitude, .longitude, .areaName[0].value, .country[0].value] | @tsv' \
+    2>/dev/null)" || return 1
+  [[ -z $loc ]] && return 1
+
+  IFS=$'\t' read -r lat lon name country <<< "$loc"
+  [[ -z $lat || -z $lon ]] && return 1
+  label="${name:-}, ${country:-}"
+}
+
+# Resolve a configured city through Open-Meteo's geocoder.
+geocode_city() {
+  local query="$1" geo loc name country
+
+  geo="$(curl -fsS -m 12 --get "https://geocoding-api.open-meteo.com/v1/search" \
+    --data-urlencode "name=$query" \
+    --data "count=1" \
+    --data "language=en" \
+    --data "format=json" 2>/dev/null)" || return 1
+
+  loc="$(printf '%s' "$geo" | jq -r \
+    '.results[0]? | [.latitude, .longitude, .name, .country] | @tsv' \
+    2>/dev/null)" || return 1
+  [[ -z $loc ]] && return 1
+
+  IFS=$'\t' read -r lat lon name country <<< "$loc"
+  [[ -z $lat || -z $lon ]] && return 1
+  label="${name:-}, ${country:-}"
+}
+
+if [[ -z $city || $city == auto ]]; then
+  # IP-based location, with wttr.in as a fallback.
+  ip_loc="$(curl -fsS -m 12 "https://ipwho.is/" 2>/dev/null)" || ip_loc=""
+  loc="$(printf '%s' "$ip_loc" | jq -r \
+    'select(.success == true) | [.latitude, .longitude, (.city // .region // ""), (.country // "")] | @tsv' \
+    2>/dev/null)" || loc=""
+
+  if [[ -n $loc ]]; then
+    IFS=$'\t' read -r lat lon name country <<< "$loc"
+    label="${name:-}, ${country:-}"
+  fi
+
+  [[ -z $lat ]] && wttr_location ""
+else
+  # Try the full name first (e.g. "Harare, Zimbabwe"), then just the city.
+  if ! geocode_city "$city"; then
+    short_city="${city%%,*}"
+    [[ $short_city != "$city" ]] && geocode_city "$short_city"
+  fi
+  [[ -z $lat ]] && wttr_location "$city"
+fi
+
+[[ -z $lat || -z $lon ]] && exit 0
+
+weather_json="$(curl -fsS -m 15 --get "https://api.open-meteo.com/v1/forecast" \
+  --data-urlencode "latitude=$lat" \
+  --data-urlencode "longitude=$lon" \
+  --data "current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" \
+  --data "timezone=auto" \
+  --data "temperature_unit=$temp_unit" \
+  --data "wind_speed_unit=$wind_unit" 2>/dev/null)" || exit 0
+[[ -z $weather_json ]] && exit 0
+
+current="$(printf '%s' "$weather_json" | jq -r \
+  '.current? | [.temperature_2m, .apparent_temperature, .relative_humidity_2m, .wind_speed_10m, .weather_code] | @tsv' \
+  2>/dev/null)" || exit 0
+[[ -z $current ]] && exit 0
+
+IFS=$'\t' read -r temp feels hum wind code <<< "$current"
+[[ -z $temp ]] && exit 0
+
+temp="$(printf '%.0f' "$temp")"
+[[ -n $feels ]] && feels="$(printf '%.0f' "$feels")"
+[[ -n $hum ]] && hum="$(printf '%.0f' "$hum")"
+[[ -n $wind ]] && wind="$(printf '%.0f' "$wind")${wind_label}"
+
+case "$(printf '%.0f' "${code:-0}")" in
+  0) desc="Clear" ;;
+  1) desc="Mainly clear" ;;
+  2) desc="Partly cloudy" ;;
+  3) desc="Overcast" ;;
+  45|48) desc="Fog" ;;
+  51|53|55) desc="Drizzle" ;;
+  56|57) desc="Freezing drizzle" ;;
+  61|63|65) desc="Rain" ;;
+  66|67) desc="Freezing rain" ;;
+  71|73|75) desc="Snow" ;;
+  77) desc="Snow grains" ;;
+  80|81|82) desc="Rain showers" ;;
+  85|86) desc="Snow showers" ;;
+  95) desc="Thunderstorm" ;;
+  96|99) desc="Thunderstorm with hail" ;;
+  *) desc="Unknown" ;;
+esac
+
+# Trim the label and avoid stray trailing separators when a field is missing.
+label="$(printf '%s' "$label" | sed -e 's/^[[:space:],]*//' -e 's/[[:space:],]*$//')"
+[[ -z $label ]] && exit 0
+
+printf '%s\n' "$label"
+printf '%s\n' "$desc"
+if [[ -n $feels && $feels != "$temp" ]]; then
+  printf '%s%s · feels %s%s\n' "$temp" "$sym" "$feels" "$sym"
+else
+  printf '%s%s\n' "$temp" "$sym"
 fi
 
 humidity_part=""
-[[ -n ${hum:-} ]] && humidity_part="💧 ${hum}%"
+[[ -n $hum ]] && humidity_part="💧 ${hum}%"
 wind_part=""
-[[ -n ${wind:-} ]] && wind_part="🌬 ${wind}"
+[[ -n $wind ]] && wind_part="🌬 ${wind}"
 printf '%s  %s\n' "$humidity_part" "$wind_part" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 
 exit 0

@@ -49,6 +49,10 @@ Source copies (edit these too if you want the change to survive a reinstall):
 | `teyte.todo` | `path` (markdown file), `maxItems`, `showCompleted`, `accentColor`, `width` |
 | `teyte.prompt` | `agent`, `agentArgs`, `terminal`, `cwd` (`"auto"`, `"home"`, or an absolute path), `placeholder`, `barLabel`, `paletteYRatio`, `historyLimit`, `barNamespace`, `modesEnabled`, `notePath` |
 
+`teyte.weather` gets current conditions from Open-Meteo. With `city` set to
+`"auto"` it resolves the location from your public IP; otherwise it geocodes
+the configured city. `refreshMinutes` controls how often it refreshes.
+
 ### `teyte.prompt`
 
 The palette is interactive. A few keys behave differently:
