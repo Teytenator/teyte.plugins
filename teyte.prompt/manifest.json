@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "id": "teyte.prompt",
-  "name": "Agent Prompt",
-  "version": "1.0.0",
+  "name": "Search & Agent Prompt",
+  "version": "1.1.0",
   "author": "teyte",
-  "description": "Spotlight-style prompt palette that launches your coding agent in a terminal. Click the desktop bar or hit the keybind, type, press Enter.",
+  "description": "Spotlight-style palette that searches the web in your default browser. Use @ to launch your coding agent; prefixes also handle shell commands, notes, and calculations.",
   "kinds": ["overlay", "service"],
   "keepLoaded": true,
   "entryPoints": {

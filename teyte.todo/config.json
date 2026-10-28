@@ -7,13 +7,14 @@
   "color": "#ffffff",
   "accentColor": "#66ccff",
   "bgColor": "#000000",
-  "bgOpacity": 1.0,
+  "bgOpacity": 0.5,
   "opacity": 1.0,
   "padding": 16,
-  "width": 320,
+  "width": 312,
   "xRatio": 0.25,
   "yRatio": 0.2,
-  "xOffset": 0,
-  "yOffset": 0,
-  "namespace": "teyte.todo"
+  "xOffset": -305,
+  "yOffset": -112,
+  "namespace": "teyte.todo",
+  "showEditButton": true
 }

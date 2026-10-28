@@ -4,15 +4,17 @@
   "fontWeight": 400,
   "color": "#ffffff",
   "bgColor": "#000000",
-  "bgOpacity": 1.0,
+  "bgOpacity": 0.5,
   "padding": 18,
   "opacity": 1.0,
   "xRatio": 0.75,
   "yRatio": 0.5366,
   "namespace": "teyte.media",
-  "width": 240,
+  "width": 275,
   "xMargin": 30,
   "fontSize": 14,
   "xOffset": 0,
-  "yOffset": 0
+  "yOffset": 85,
+  "albumArt": true,
+  "albumArtSize": 72
 }

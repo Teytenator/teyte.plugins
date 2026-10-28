@@ -16,6 +16,7 @@ Item {
     path: "~/todo.md",
     maxItems: 12,
     showCompleted: true,
+    showEditButton: true,
     fontFamily: "JetBrainsMono Nerd Font",
     fontSize: 14,
     color: "#ffffff",
@@ -68,6 +69,7 @@ Item {
   readonly property real panelWidth: Math.max(160, root.num(root.settings.width, 320))
   readonly property int maxItems: Math.max(1, root.num(root.settings.maxItems, 12))
   readonly property bool showCompleted: root.settings.showCompleted !== false
+  readonly property bool showEditButton: root.settings.showEditButton !== false
   readonly property real xRatio: root.num(root.settings.xRatio, 0.25)
   readonly property real yRatio: root.num(root.settings.yRatio, 0.2)
   readonly property real xOffset: root.num(root.settings.xOffset, 0)
@@ -103,7 +105,7 @@ Item {
   function parseTasks(raw) {
     var out = []
     var lines = String(raw || "").split("\n")
-    var re = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/
+    var re = /^\s*[-*]\s+\[([ xX]?)\]\s*(.*)$/
     for (var i = 0; i < lines.length; i++) {
       var m = re.exec(lines[i])
       if (!m) continue
@@ -123,6 +125,12 @@ Item {
     if (toggleProc.running) return
     toggleProc.command = [root.toggleHelper, root.todoPath, task]
     toggleProc.running = true
+  }
+
+  function editTasks() {
+    if (editProc.running) return
+    editProc.command = ["omarchy-launch-editor", root.todoPath]
+    editProc.running = true
   }
 
   Process {
@@ -166,6 +174,12 @@ Item {
   Process {
     id: toggleProc
     command: ["true"]
+    onExited: refreshSoon.restart()
+  }
+
+  Process {
+    id: editProc
+    command: ["omarchy-launch-editor", root.todoPath]
     onExited: refreshSoon.restart()
   }
 
@@ -224,14 +238,48 @@ Item {
                 opacity: root.specOpacity
               }
 
-              Text {
+              Row {
+                id: headerActions
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.openCount + " open"
-                color: root.faintColor
-                font.family: root.specFont
-                font.pixelSize: root.headerSize
-                opacity: root.specOpacity
+                height: parent.height
+                spacing: 14
+
+                Text {
+                  height: headerActions.height
+                  verticalAlignment: Text.AlignVCenter
+                  text: root.openCount + " open"
+                  color: root.faintColor
+                  font.family: root.specFont
+                  font.pixelSize: root.headerSize
+                  opacity: root.specOpacity
+                }
+
+                Item {
+                  visible: root.showEditButton
+                  width: editLabel.implicitWidth + 8
+                  height: headerActions.height
+
+                  Text {
+                    id: editLabel
+                    anchors.centerIn: parent
+                    text: "EDIT"
+                    color: editMouse.containsMouse ? root.specAccent : root.dimColor
+                    font.family: root.specFont
+                    font.pixelSize: root.headerSize
+                    font.letterSpacing: 1.2
+                    font.underline: editMouse.containsMouse
+                    opacity: root.specOpacity
+                  }
+
+                  MouseArea {
+                    id: editMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.editTasks()
+                  }
+                }
               }
             }
 

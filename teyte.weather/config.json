@@ -4,7 +4,7 @@
   "fontWeight": 400,
   "color": "#ffffff",
   "bgColor": "#000000",
-  "bgOpacity": 1.0,
+  "bgOpacity": 0.5,
   "padding": 18,
   "opacity": 1.0,
   "city": "auto",
@@ -13,9 +13,9 @@
   "xRatio": 0.75,
   "yRatio": 0.6685,
   "namespace": "teyte.weather",
-  "width": 240,
+  "width": 275,
   "xMargin": 30,
   "fontSize": 14,
   "xOffset": 0,
-  "yOffset": 0
+  "yOffset": 74
 }

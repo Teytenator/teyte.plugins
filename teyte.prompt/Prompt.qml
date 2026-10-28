@@ -31,9 +31,11 @@ Item {
     agentArgs: [],
     terminal: "foot",
     cwd: "auto",
-    placeholder: "Ask the agent what to do or build…",
+    placeholder: "Search the web or @ for the agent…",
     historyLimit: 50,
     modesEnabled: true,
+    defaultMode: "search",
+    searchUrl: "https://www.google.com/search?q=%s",
     notePath: "~/inbox.md",
     namespace: "teyte.prompt"
   })
@@ -86,27 +88,36 @@ Item {
   readonly property color errorColor: Qt.rgba(1.0, 0.45, 0.4, 0.95)
 
   readonly property bool modesEnabled: root.settings.modesEnabled !== false
+  readonly property string defaultMode: String(root.settings.defaultMode || "search") === "agent" ? "agent" : "search"
+  readonly property string searchUrl: String(root.settings.searchUrl || "https://www.google.com/search?q=%s")
   readonly property string notePath: {
     var p = String(root.settings.notePath || "~/inbox.md")
     if (p === "~") return Quickshell.env("HOME")
     if (p.indexOf("~/") === 0) return Quickshell.env("HOME") + p.substring(1)
     return p
   }
+  readonly property string searchHost: {
+    var m = root.searchUrl.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^\/?#]+)/)
+    return m ? String(m[1]).replace(/^www\./i, "") : "default browser"
+  }
   readonly property string activeMode: root.modeOf(input.text)
   readonly property string modeGlyph: root.activeMode === "shell" ? "$"
     : root.activeMode === "note" ? "✎"
     : root.activeMode === "calc" ? "="
-    : "❯"
+    : root.activeMode === "agent" ? "@"
+    : "⌕"
   readonly property string modeHint: {
     if (root.statusText.length > 0) return root.statusText
     if (root.activeMode === "shell") return "Enter ↵ run   ·   Esc close"
     if (root.activeMode === "note") return "Enter ↵ save note   ·   Esc close"
     if (root.activeMode === "calc") return "Enter ↵ copy result   ·   Esc close"
-    return "Enter ↵ launch   ·   Esc close   ·   ↑↓ history"
+    if (root.activeMode === "search") return "Enter ↵ search in browser   ·   Esc close   ·   ↑↓ history"
+    return "Enter ↵ launch agent   ·   Esc close   ·   ↑↓ history"
   }
   readonly property string modeSummary: {
     if (root.activeMode === "note") return "note · " + root.notePath
     if (root.activeMode === "calc") return "calc · + − * / ** sqrt() pi"
+    if (root.activeMode === "search") return "web · " + root.searchHost
     var cwd = String(root.settings.cwd || "auto")
     if (root.activeMode === "shell") return "shell · " + (cwd === "auto" ? "focused dir" : cwd)
     var agent = String(root.settings.agent || "opencode")
@@ -115,20 +126,32 @@ Item {
 
   function modeOf(raw) {
     var t = String(raw === undefined || raw === null ? "" : raw)
-    if (!root.modesEnabled || t.length === 0) return "agent"
+    if (t.length === 0) return root.defaultMode
+    if (!root.modesEnabled) return root.defaultMode
     var c = t.charAt(0)
     if (c === ">") return "shell"
     if (c === ":") return "note"
     if (c === "=") return "calc"
-    return "agent"
+    if (c === "?") return "search"
+    if (c === "@") return "agent"
+    return root.defaultMode
   }
 
   function queryOf(raw) {
     var t = String(raw === undefined || raw === null ? "" : raw).trim()
     var mode = root.modeOf(t)
-    if (mode !== "agent") return t.substring(1).trim()
-    if (t.charAt(0) === "?") return t.substring(1).trim()
+    if (!root.modesEnabled) return t
+    if (mode === "search" && t.charAt(0) === "?") return t.substring(1).trim()
+    if (mode === "agent" && t.charAt(0) === "@") return t.substring(1).trim()
+    if (mode !== "search" && mode !== "agent") return t.substring(1).trim()
     return t
+  }
+
+  function searchUrlFor(query) {
+    var encoded = encodeURIComponent(String(query || ""))
+    if (root.searchUrl.indexOf("%s") !== -1) return root.searchUrl.replace("%s", encoded)
+    if (root.searchUrl.indexOf("{query}") !== -1) return root.searchUrl.replace("{query}", encoded)
+    return root.searchUrl + encoded
   }
 
   function open(payloadJson) {
@@ -159,20 +182,22 @@ Item {
   }
 
   function submit() {
-    var typed = String(input.text || "")
-    var forceAgent = typed.length > 0 && typed.charAt(0) === " "
-    var raw = typed.trim()
+    var raw = String(input.text || "").trim()
     if (raw.length === 0) {
       root.dismiss()
       return
     }
-    var mode = forceAgent ? "agent" : root.modeOf(raw)
-    var query = forceAgent ? raw : root.queryOf(raw)
+    var mode = root.modeOf(raw)
+    var query = root.queryOf(raw)
     if (query.length === 0) {
       root.statusText = "Type something after " + raw.charAt(0)
       return
     }
-    root.pushHistory(typed.length > 0 ? typed : raw)
+    root.pushHistory(String(input.text || ""))
+    if (mode === "search") {
+      root.openSearch(query)
+      return
+    }
     if (mode === "calc") {
       root.runCalc(query)
       return
@@ -224,6 +249,13 @@ Item {
       text, root.historyPath, dir
     ]
     historyAddProc.running = true
+  }
+
+  function openSearch(query) {
+    root.statusText = ""
+    searchProc.command = ["xdg-open", root.searchUrlFor(query)]
+    searchProc.running = true
+    root.dismiss()
   }
 
   function resolveAndLaunch(kind, text) {
@@ -357,6 +389,11 @@ Item {
   }
 
   Process {
+    id: searchProc
+    command: ["true"]
+  }
+
+  Process {
     id: calcProc
     property bool used: false
     command: ["true"]
@@ -391,8 +428,8 @@ Item {
 
   IpcHandler {
     target: "teyte.prompt"
-    function open(): void { root.open("") }
-    function close(): void { root.close() }
+    function open() { root.open("") }
+    function close() { root.close() }
   }
 
   PanelWindow {
@@ -457,7 +494,7 @@ Item {
 
           Text {
             id: placeholderText
-            text: root.settings.placeholder || "Ask the agent what to do or build…"
+            text: root.settings.placeholder || "Search the web or @ for the agent…"
             color: root.hintColor
             font.family: root.specFont
             font.pixelSize: root.specFontSize

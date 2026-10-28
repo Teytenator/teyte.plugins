@@ -4,6 +4,18 @@ Every plugin reads a `config.json` sitting next to its QML. Edit the installed
 copy — the running plugin re-reads it every few seconds, so changes hot-reload
 without a restart.
 
+The quickest way to edit them is the unified TUI:
+
+```bash
+teyte-settings                 # pick a plugin, then a key
+teyte-settings --check         # validate every config
+teyte-settings --plugin teyte.media
+```
+
+It type-checks values, keeps booleans and JSON values intact, and only replaces
+the live file after validation. The rest of this page documents the keys and
+what they do.
+
 ## Where the files live
 
 Installed plugins (this is the live copy):
@@ -44,10 +56,11 @@ Source copies (edit these too if you want the change to survive a reinstall):
 | Plugin | Extra keys |
 |--------|-----------|
 | `teyte.calendar` | `cellSize` — day-cell size in px |
+| `teyte.media` | `albumArt` (bool), `albumArtSize` (px) |
 | `teyte.visualizer` | `bars` (count), `barWidth`, `barGap`, `maxBarHeight` (px), `maxValue` (input gain ceiling, default `8000`) |
 | `teyte.weather` | `city` (`"auto"` or a city name), `units` (`"metric"` / `"imperial"`), `refreshMinutes` |
-| `teyte.todo` | `path` (markdown file), `maxItems`, `showCompleted`, `accentColor`, `width` |
-| `teyte.prompt` | `agent`, `agentArgs`, `terminal`, `cwd` (`"auto"`, `"home"`, or an absolute path), `placeholder`, `barLabel`, `paletteYRatio`, `historyLimit`, `barNamespace`, `modesEnabled`, `notePath` |
+| `teyte.todo` | `path` (markdown file), `maxItems`, `showCompleted`, `showEditButton`, `accentColor`, `width` |
+| `teyte.prompt` | `defaultMode`, `searchUrl`, `agent`, `agentArgs`, `terminal`, `cwd` (`"auto"`, `"home"`, or an absolute path), `placeholder`, `barLabel`, `paletteYRatio`, `historyLimit`, `barNamespace`, `modesEnabled`, `notePath` |
 
 `teyte.weather` gets current conditions from Open-Meteo. With `city` set to
 `"auto"` it resolves the location from your public IP; otherwise it geocodes
@@ -59,16 +72,18 @@ The palette is interactive. A few keys behave differently:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
+| `defaultMode` | `"search"` | What `Enter` does with no prefix: `"search"` opens `searchUrl` in the default browser; `"agent"` launches the coding agent |
+| `searchUrl` | `"https://www.google.com/search?q=%s"` | Search URL template. `%s` or `{query}` is replaced with the URL-encoded text; without a placeholder the text is appended |
 | `agent` | `"opencode"` | Command run inside the terminal |
 | `agentArgs` | `[]` | Extra arguments inserted before `--prompt`, e.g. `["--model", "anthropic/claude-sonnet-4-5"]` |
 | `terminal` | `"foot"` | Terminal emulator; the launch is `<terminal> -e <agent> [agentArgs] --prompt "<text>"` |
 | `cwd` | `"auto"` | `"auto"` = the focused window's working directory (falls back to `~/Work`, then `$HOME`); `"home"` = `$HOME`; anything else is used as-is |
-| `placeholder` | `"Ask the agent what to do or build…"` | Dim text shown in the empty input |
-| `barLabel` | `"❯ ask agent…"` | Text on the clickable desktop bar |
+| `placeholder` | `"Search the web or @ for the agent…"` | Dim text shown in the empty input |
+| `barLabel` | `"⌕ search web…"` | Text on the clickable desktop bar |
 | `paletteYRatio` | `0.28` | Vertical position of the palette (fraction of screen height) |
 | `historyLimit` | `50` | Recent prompts kept in the input history |
 | `barNamespace` | `"teyte.prompt-bar"` | Layer-shell namespace for the desktop bar |
-| `modesEnabled` | `true` | Enable the `>`, `:`, and `=` prefixes; `false` sends everything to the agent |
+| `modesEnabled` | `true` | Enable the `>`, `:`, `=`, `?`, and `@` prefixes; `false` sends everything to `defaultMode` |
 | `notePath` | `"~/inbox.md"` | File that note mode appends timestamped lines to |
 
 #### Modes
@@ -78,18 +93,23 @@ left and the hint line show the active mode.
 
 | Prefix | Mode | `Enter` does |
 |--------|------|--------------|
-| *(none)*, `?`, or a leading space | agent | Launches `agent` with the text as `--prompt` |
+| *(none)* | search | Opens `searchUrl` in the default browser |
+| `?` | search | Same as the default; useful when the query itself starts with a prefix character |
+| `@` | agent | Launches `agent` with the text as `--prompt` |
 | `>` | shell | Runs the rest in `$SHELL` inside `terminal`; the shell stays open afterward |
 | `:` | note | Appends `- HH:MM <text>` to `notePath` and shows a notification |
 | `=` | calc | Evaluates the expression, copies the result to the clipboard, then closes the palette |
 
-Start with a space to send a literal `>`, `:`, or `=` prompt to the agent.
+To search for text that starts with `@`, `>`, `:`, `=`, or `?`, prefix it with
+`?` (for example, `?@home`). To send a literal prefix character to the agent,
+keep it after the `@` (for example, `@ >foo`).
 
 Examples:
 
 ```
-fix the failing test in this repo
-? explain what this function does
+how to use git worktrees
+?@home
+@ fix the failing test in this repo
 > npm run dev
 : call the dentist tomorrow
 = 12 * 8 + 3
@@ -106,11 +126,13 @@ evaluator — not a shell — so typos show an error instead of executing anythi
 palette prefilled with:
 
 ```
-Screenshot: /home/you/.cache/teyte.prompt/shot-....png — text: <OCR text>
+@Screenshot: /home/you/.cache/teyte.prompt/shot-....png — text: <OCR text>
 ```
 
-Add your request after the prefilled text and press `Enter`. The same flow can
-be run by hand — useful with an existing file or a preset region:
+The leading `@` keeps the request in agent mode even though the default action
+is a web search. Add your request after the prefilled text and press `Enter`.
+The same flow can be run by hand — useful with an existing file or a preset
+region:
 
 ```bash
 ~/.local/bin/teyte-prompt-shot                  # interactive region picker
@@ -133,18 +155,39 @@ To see the directory the agent will use without opening a terminal, run:
 ~/.local/bin/teyte-prompt-cwd
 ```
 
+### `teyte.media`
+
+The now-playing panel shows the MPRIS cover art beside the title, artist, and
+album. Artwork is loaded directly from the player's `trackArtUrl`; when a
+player has no art (or is a live stream), the panel shows a small music-note
+placeholder instead of leaving a blank box.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `albumArt` | `true` | Show the cover; `false` removes the artwork column entirely |
+| `albumArtSize` | `72` | Cover size in px (square) |
+
+Older installed configs may not contain these keys yet; the QML still uses the
+`true`/`72` defaults. Add them with `Edit raw JSON` in the TUI if you want them
+listed as editable rows.
+
+Keep `albumArtSize` fairly small: the media panel and the weather panel are
+close together at the default `yRatio`/`yOffset`. If you make the cover larger,
+nudge the media panel up with `yOffset` or move the weather panel down.
+
 ### `teyte.todo`
 
 A markdown task list on the desktop. Click a row to toggle its checkbox; the
-file is rewritten in place. Add tasks by editing the file (or let your agent
-edit it) — the widget re-reads it every few seconds.
+file is rewritten in place. Click **EDIT** to open the file in Omarchy's default
+editor, or edit it yourself — the widget re-reads it every few seconds.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `path` | `"~/todo.md"` | Markdown file to read; `~/` is expanded |
 | `maxItems` | `12` | Maximum number of rows shown |
 | `showCompleted` | `true` | Also show checked tasks; `false` hides them |
-| `accentColor` | `"#66ccff"` | Color of the `[ ]` marker and row hover |
+| `showEditButton` | `true` | Show the `EDIT` button in the header |
+| `accentColor` | `"#66ccff"` | Color of the `[ ]` marker, row hover, and EDIT hover |
 | `width` | `320` | Panel width in px |
 
 The panel is click-through everywhere except the task list itself. The checkbox
@@ -156,8 +199,9 @@ syntax is standard GitHub-flavored markdown:
 - [x] Done task
 ```
 
-`-` and `*` both work, and only the first line matching the clicked text is
-toggled. The helper behind it can be used directly:
+`-` and `*` both work, as does writing an empty checkbox as `[]` instead of
+`[ ]`. Only the first line matching the clicked text is toggled. The helper
+behind it can be used directly:
 
 ```bash
 ~/.local/bin/teyte-todo-toggle ~/todo.md "Open task"
@@ -210,13 +254,56 @@ Send notes to a different file:
 "notePath": "~/notes/inbox.md"
 ```
 
-Set `"modesEnabled": false` to disable the `>`/`:`/`=` prefixes and send every
-line to the agent.
+Use a different search provider by changing the template (`%s` is the query):
+
+```json
+"searchUrl": "https://duckduckgo.com/?q=%s"
+```
+
+Set `"modesEnabled": false` to disable the `>`/`:`/`=`/`?`/`@` prefixes and
+send every line to `defaultMode`. Set `"defaultMode": "agent"` to make the
+coding agent the no-prefix action again; `?` still searches while modes are
+enabled.
+
+## Unified settings TUI
+
+`teyte-settings` reads every installed `~/.config/omarchy/plugins/teyte.*/config.json`
+and presents one menu:
+
+```
+teyte settings — installed teyte.* plugins
+› teyte.calendar   Calendar          17 keys  ok
+  teyte.media      Media Controller  18 keys  ok
+  …
+  ✓  Validate all configs
+  ↻  Rescan plugins
+  ✕  Quit
+```
+
+Inside a plugin, each row shows the key, its JSON type, and its current value.
+The editor is deliberately conservative:
+
+- strings use a text prompt, numbers must parse as numbers, booleans use a picker;
+- arrays/objects/`null` are entered as JSON and must match the original type;
+- `Edit raw JSON` opens a temporary copy in `$VISUAL`/`$EDITOR` (falling back to
+  `nvim`, `nano`, or `vi`); valid saves apply live while the editor is open, and
+  you quit the editor to return (`:wq` in nvim, `Ctrl-X` in nano); invalid JSON
+  is never written to the live file;
+- writes go to a temp file in the plugin directory, validate with `jq`, then
+  replace the live file atomically.
+
+Shortcuts: `teyte-settings` to browse, `teyte-settings --plugin teyte.media` to
+jump straight to a plugin, `teyte-settings --check` to validate all configs,
+and `teyte-settings --list` for scriptable paths. The suggested keybind is
+`Super+Shift+Alt+S`; see the README.
 
 ## Apply / verify
 
 ```bash
-# Validate JSON after editing
+# Validate every config (recommended after hand-editing)
+teyte-settings --check
+
+# Validate one file directly
 jq -e . ~/.config/omarchy/plugins/teyte.calendar/config.json
 
 # Wait ~5 s for the hot-reload, or force a full shell restart
@@ -244,6 +331,14 @@ but QML edits need `omarchy restart shell` (or toggling the plugin off/on).
   overridden. `hyprctl binds` shows the active bindings.
 - **Still the old look after a QML edit** — `keepLoaded` services survive
   rescans; run `omarchy restart shell`.
+- **Cover art does not show** — the player must expose an MPRIS art URL. Live
+  streams often have none (the music-note placeholder is expected), and remote
+  URLs need network access. Confirm `albumArt` is true and `albumArtSize` is
+  reasonable; if the panel is hidden, see the layer checks below.
+- **A config is invalid** — run `teyte-settings --check`. Open the affected
+  plugin in `teyte-settings` and use `Edit raw JSON`; invalid JSON is never
+  written into the live file. The plugin falls back to defaults until the file
+  parses again.
 - **Panel missing entirely** — some panels are conditionally visible (weather
   waits for data, visualizer for audio). Check the shell log:
 

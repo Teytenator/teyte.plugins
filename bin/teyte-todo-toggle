@@ -15,7 +15,7 @@ import re
 import sys
 
 path, task = sys.argv[1], sys.argv[2].strip()
-pattern = re.compile(r"^(\s*[-*]\s+\[)([ xX])(\]\s+)(.*)$")
+pattern = re.compile(r"^(\s*[-*]\s+\[)([ xX]?)(\]\s*)(.*)$")
 
 with open(path, encoding="utf-8") as handle:
     lines = handle.read().splitlines()

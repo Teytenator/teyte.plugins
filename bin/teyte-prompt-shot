@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Capture a screen region and open the agent palette prefilled with the image
-# path and any text OCR can read from it.
+# Capture a screen region and open the prompt prefilled for the agent.
+# The @ prefix forces agent mode; the default prompt action is a web search.
 #
 # Usage: teyte-prompt-shot [geometry]
 #   geometry is slurp's "X,Y WxH"; omitted = interactive region picker.
@@ -24,7 +24,7 @@ if command -v tesseract >/dev/null 2>&1; then
   ocr="$(tesseract "$file" - 2>/dev/null | tr '\n' ' ' | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //' -e 's/ $//')"
 fi
 
-prompt="Screenshot: $file"
+prompt="@Screenshot: $file"
 if [[ -n ${ocr} ]]; then
   prompt+=" — text: ${ocr:0:800}"
 fi

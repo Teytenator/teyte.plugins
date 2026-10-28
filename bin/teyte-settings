@@ -1,0 +1,641 @@
+#!/usr/bin/env bash
+# teyte-settings — one terminal UI for every installed teyte.* plugin config.
+#
+# Run interactively:
+#   teyte-settings
+#
+# Non-interactive checks:
+#   teyte-settings --check
+#   teyte-settings --list
+
+set -euo pipefail
+
+APP="teyte settings"
+PLUGIN_ROOT="${TEYTE_PLUGIN_ROOT:-$HOME/.config/omarchy/plugins}"
+GUM_HEIGHT="${GUM_HEIGHT:-22}"
+
+CONFIGS=()
+
+usage() {
+  cat <<'EOF'
+Usage: teyte-settings [options]
+
+Edit installed teyte.* plugin configs in one place. Values are type-checked,
+JSON is validated, and the live config is replaced atomically so the shell can
+hot-reload it.
+
+Options:
+  --check          Validate every installed teyte config and exit
+  --list           List installed teyte plugins and config paths
+  --plugin ID      Open the menu for one plugin id (for example teyte.media)
+  -h, --help       Show this help
+
+Environment:
+  TEYTE_PLUGIN_ROOT   Override the plugin directory (default: ~/.config/omarchy/plugins)
+  VISUAL, EDITOR      Editor for "Edit raw JSON" (falls back to nvim/nano/vi)
+  GUM_HEIGHT          Height of gum menus (default: 22)
+
+Controls:
+  ↑/↓ or j/k   move
+  Enter        choose
+  Esc/Ctrl-C   back / quit
+EOF
+}
+
+die() {
+  printf '%s: %s\n' "$APP" "$*" >&2
+  exit 1
+}
+
+need_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required"
+}
+
+need_gum() {
+  command -v gum >/dev/null 2>&1 || die "gum is required for the interactive UI (install the gum package)"
+}
+
+load_configs() {
+  local nullglob_was_set
+  nullglob_was_set=$(shopt -p nullglob || true)
+  shopt -s nullglob
+  CONFIGS=("$PLUGIN_ROOT"/teyte.*/config.json)
+  eval "$nullglob_was_set"
+}
+
+plugin_id() {
+  basename "$(dirname "$1")"
+}
+
+plugin_name() {
+  local file=$1 id manifest name
+  id=$(plugin_id "$file")
+  manifest="$(dirname "$file")/manifest.json"
+  if [[ -r $manifest ]]; then
+    name=$(jq -r '.name // empty' "$manifest" 2>/dev/null || true)
+    if [[ -n $name ]]; then
+      printf '%s' "$name"
+      return
+    fi
+  fi
+  printf '%s' "$id"
+}
+
+is_valid() {
+  jq -e . "$1" >/dev/null 2>&1
+}
+
+shorten() {
+  local value=$1 max=${2:-58}
+  value=${value//$'\n'/ }
+  value=${value//$'\t'/ }
+  if (( ${#value} > max )); then
+    printf '%s…' "${value:0:$((max - 1))}"
+  else
+    printf '%s' "$value"
+  fi
+}
+
+key_value() {
+  local file=$1 key=$2
+  jq -r --arg k "$key" '.[$k] | if type == "string" then . else tojson end' "$file" 2>/dev/null \
+    | tr '\n\t' '  '
+}
+
+pause() {
+  printf '\n'
+  read -r -p "Press Enter to continue… " _ || true
+}
+
+info() {
+  gum style --foreground 51 "$1" 2>/dev/null || true
+}
+
+warn() {
+  gum style --foreground 196 "$1" 2>/dev/null || true
+}
+
+flash() {
+  info "$1"
+  sleep 0.7
+}
+
+gum_choose() {
+  local header=$1 selection
+  shift
+  selection=$(gum choose \
+    --header "$header" \
+    --height "$GUM_HEIGHT" \
+    --cursor '› ' \
+    --cursor.foreground 51 \
+    --cursor.background 0 \
+    --header.foreground 51 \
+    --header.background 0 \
+    --item.background 0 \
+    --selected.foreground 51 \
+    --selected.background 0 \
+    "$@") || true
+  if [[ -z $selection ]]; then
+    clear >&2 2>/dev/null || true
+  fi
+  printf '%s' "$selection"
+}
+
+validate_all() {
+  local file failed=0
+  if (( ${#CONFIGS[@]} == 0 )); then
+    printf 'No teyte configs found in %s\n' "$PLUGIN_ROOT"
+    return 1
+  fi
+  for file in "${CONFIGS[@]}"; do
+    if is_valid "$file"; then
+      printf 'ok       %s\n' "$file"
+    else
+      printf 'INVALID  %s\n' "$file"
+      failed=1
+    fi
+  done
+  if (( failed )); then
+    printf '\nFix an invalid file with: teyte-settings --plugin <id>\n'
+    return 1
+  fi
+  printf '\nAll teyte configs are valid.\n'
+}
+
+list_configs() {
+  local file
+  if (( ${#CONFIGS[@]} == 0 )); then
+    printf 'No teyte configs found in %s\n' "$PLUGIN_ROOT"
+    return 1
+  fi
+  for file in "${CONFIGS[@]}"; do
+    printf '%s\t%s\t%s\n' "$(plugin_id "$file")" "$(plugin_name "$file")" "$file"
+  done
+}
+
+save_json() {
+  local file=$1
+  shift
+  local dir tmp
+  dir=$(dirname "$file")
+  tmp=$(mktemp "$dir/.teyte-settings.XXXXXX.json") || return 1
+
+  if ! jq --indent 2 "$@" "$file" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! jq -e . "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  chmod --reference="$file" "$tmp" 2>/dev/null || chmod 644 "$tmp"
+  mv -f "$tmp" "$file"
+}
+
+edit_raw() {
+  local file=$1 dir tmp applied editor editor_pid watcher_pid
+  local -a editor_cmd
+  dir=$(dirname "$file")
+  tmp=$(mktemp "$dir/.teyte-settings.XXXXXX.json") || return 1
+  if ! cp -a "$file" "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  applied=$(mktemp "$dir/.teyte-settings.applied.XXXXXX") || {
+    rm -f "$tmp"
+    return 1
+  }
+  rm -f "$applied"
+
+  editor=${VISUAL:-${EDITOR:-}}
+  if [[ -z $editor ]]; then
+    if command -v nvim >/dev/null 2>&1; then
+      editor=nvim
+    elif command -v nano >/dev/null 2>&1; then
+      editor=nano
+    elif command -v vi >/dev/null 2>&1; then
+      editor=vi
+    else
+      rm -f "$tmp"
+      warn "No terminal editor found. Set VISUAL or EDITOR and try again."
+      pause
+      return 1
+    fi
+  fi
+  read -r -a editor_cmd <<<"$editor"
+  if ! command -v "${editor_cmd[0]}" >/dev/null 2>&1; then
+    warn "Editor not found: ${editor_cmd[0]}"
+    rm -f "$tmp"
+    pause
+    return 1
+  fi
+
+  clear
+  printf '%s\n\n' "$(plugin_id "$file") / config.json"
+  printf '%s\n' "A temporary copy will open. Save and quit the editor to apply."
+  printf '%s\n' "  nvim/vim:  :wq  save and quit    :q!  cancel"
+  printf '%s\n' "  nano:      Ctrl-O, Enter saves   Ctrl-X exits"
+  printf '\n'
+  if ! gum confirm "Open the raw JSON editor?" \
+    --affirmative "Open editor" \
+    --negative "Cancel" \
+    --prompt.foreground 51 \
+    --selected.foreground 51 \
+    --selected.background 0 \
+    --unselected.foreground 187; then
+    rm -f "$tmp" "$applied"
+    return 0
+  fi
+
+  while true; do
+    clear
+    printf '%s\n' "$(plugin_id "$file") / config.json"
+    printf '%s\n\n' "Editing a temporary copy. Saves apply live; quit the editor to return."
+
+    "${editor_cmd[@]}" "$tmp" &
+    editor_pid=$!
+
+    # Apply valid saves while the editor is still open, so :w is enough to see
+    # the change live. The editor keeps its own copy until it exits.
+    (
+      last_sig=""
+      sig=""
+      stable=0
+      last_applied=""
+      live_tmp=""
+      trap 'if [[ -n ${live_tmp:-} ]]; then rm -f "$live_tmp"; fi' EXIT
+      trap 'exit 143' TERM
+      trap 'exit 130' INT
+      trap 'exit 129' HUP
+      while kill -0 "$editor_pid" 2>/dev/null; do
+        sig=$(stat -c '%Y:%s' "$tmp" 2>/dev/null || true)
+        if [[ -n $sig && $sig == "$last_sig" ]]; then
+          stable=$((stable + 1))
+        else
+          stable=0
+          last_sig=$sig
+        fi
+        if (( stable >= 1 )) && [[ -n $sig && $sig != "$last_applied" ]]; then
+          if jq -e . "$tmp" >/dev/null 2>&1 && ! cmp -s "$file" "$tmp"; then
+            live_tmp=$(mktemp "$dir/.teyte-settings.live.XXXXXX.json" 2>/dev/null || true)
+            if [[ -n $live_tmp ]] \
+              && cp "$tmp" "$live_tmp" 2>/dev/null \
+              && jq -e . "$live_tmp" >/dev/null 2>&1 \
+              && ! cmp -s "$file" "$live_tmp"; then
+              chmod --reference="$file" "$live_tmp" 2>/dev/null || chmod 644 "$live_tmp"
+              if mv -f "$live_tmp" "$file"; then
+                : >"$applied"
+                last_applied=$sig
+              fi
+            fi
+            rm -f "$live_tmp"
+            live_tmp=""
+          else
+            last_applied=$sig
+          fi
+        fi
+        sleep 0.4
+      done
+    ) &
+    watcher_pid=$!
+
+    wait "$editor_pid" || true
+    kill "$watcher_pid" 2>/dev/null || true
+    wait "$watcher_pid" 2>/dev/null || true
+
+    if jq -e . "$tmp" >/dev/null 2>&1; then
+      break
+    fi
+    if ! gum confirm "The JSON is invalid. Keep editing?" \
+      --affirmative "Keep editing" \
+      --negative "Discard" \
+      --prompt.foreground 51 \
+      --selected.foreground 51 \
+      --selected.background 0 \
+      --unselected.foreground 187; then
+      rm -f "$tmp" "$applied"
+      flash "Discarded. Live config keeps the last valid version."
+      return 0
+    fi
+  done
+
+  if cmp -s "$file" "$tmp"; then
+    if [[ -e $applied ]]; then
+      flash "Saved raw config. Changes hot-reload within a few seconds."
+    else
+      flash "No changes."
+    fi
+    rm -f "$tmp" "$applied"
+    return 0
+  fi
+
+  chmod --reference="$file" "$tmp" 2>/dev/null || chmod 644 "$tmp"
+  mv -f "$tmp" "$file"
+  rm -f "$applied"
+  flash "Saved raw config. Changes hot-reload within a few seconds."
+}
+
+edit_key() {
+  local file=$1 id=$2 key=$3
+  local type current initial new
+
+  clear
+  type=$(jq -r --arg k "$key" '.[$k] | type' "$file")
+  current=$(jq -c --arg k "$key" '.[$k]' "$file")
+
+  case "$type" in
+    string)
+      initial=$(jq -r --arg k "$key" '.[$k]' "$file")
+      if [[ $initial == *$'\n'* ]]; then
+        warn "This value contains newlines. Use \"Edit raw JSON\" instead."
+        pause
+        return 1
+      fi
+      if ! new=$(gum input \
+        --header "$id / $key  ·  string" \
+        --value="$initial" \
+        --placeholder "text" \
+        --prompt '› ' \
+        --width 80 \
+        --cursor.foreground 51 \
+        --header.foreground 51); then
+        return 0
+      fi
+      if ! save_json "$file" --arg k "$key" --arg v "$new" '.[$k] = $v'; then
+        warn "Could not save $key."
+        pause
+        return 1
+      fi
+      ;;
+    number)
+      initial=$(jq -r --arg k "$key" '.[$k]' "$file")
+      if ! new=$(gum input \
+        --header "$id / $key  ·  number" \
+        --value="$initial" \
+        --placeholder "number" \
+        --prompt '› ' \
+        --width 40 \
+        --cursor.foreground 51 \
+        --header.foreground 51); then
+        return 0
+      fi
+      if ! jq -e -n --argjson v "$new" '$v | type == "number"' >/dev/null 2>&1; then
+        warn "Not a number: $new"
+        pause
+        return 1
+      fi
+      if ! save_json "$file" --arg k "$key" --argjson v "$new" '.[$k] = $v'; then
+        warn "Could not save $key."
+        pause
+        return 1
+      fi
+      ;;
+    boolean)
+      if ! new=$(printf 'true\nfalse\n' | gum choose \
+        --header "$id / $key  ·  boolean  ·  current $current" \
+        --height 2 \
+        --cursor '› ' \
+        --cursor.foreground 51 \
+        --cursor.background 0 \
+        --header.foreground 51 \
+        --header.background 0 \
+        --item.background 0 \
+        --selected.foreground 51 \
+        --selected.background 0); then
+        clear >&2 2>/dev/null || true
+        return 0
+      fi
+      if ! save_json "$file" --arg k "$key" --argjson v "$new" '.[$k] = $v'; then
+        warn "Could not save $key."
+        pause
+        return 1
+      fi
+      ;;
+    null|array|object)
+      if ! new=$(gum input \
+        --header "$id / $key  ·  $type (JSON)" \
+        --value="$current" \
+        --placeholder "$type" \
+        --prompt '› ' \
+        --width 100 \
+        --cursor.foreground 51 \
+        --header.foreground 51); then
+        return 0
+      fi
+      if ! jq -e -n --argjson v "$new" --arg t "$type" '$v | type == $t' >/dev/null 2>&1; then
+        warn "Expected a JSON $type, got: $new"
+        pause
+        return 1
+      fi
+      if ! save_json "$file" --arg k "$key" --argjson v "$new" '.[$k] = $v'; then
+        warn "Could not save $key."
+        pause
+        return 1
+      fi
+      ;;
+    *)
+      warn "Unsupported value type: $type"
+      pause
+      return 1
+      ;;
+  esac
+
+  flash "Saved $key. Changes hot-reload within a few seconds."
+}
+
+plugin_menu() {
+  local file=$1 id name choice key type value
+  local -a labels
+
+  id=$(plugin_id "$file")
+  name=$(plugin_name "$file")
+
+  while true; do
+    clear
+    if ! is_valid "$file"; then
+      warn "Invalid JSON: $file"
+      printf '\n'
+      info "Use the raw editor to fix it. The live config stays untouched if you cancel."
+      printf '\n'
+      choice=$(gum_choose "$id — invalid config" \
+        "✎  Edit raw JSON (save & quit)" \
+        "←  Back")
+      case "$choice" in
+        "✎"*) edit_raw "$file" || true ;;
+        "←"*|"") return 0 ;;
+      esac
+      continue
+    fi
+
+    labels=()
+    while IFS= read -r key; do
+      type=$(jq -r --arg k "$key" '.[$k] | type' "$file")
+      value=$(key_value "$file" "$key")
+      labels+=("$(printf '%-26s %-8s %s' "$key" "$type" "$(shorten "$value" 60)")")
+    done < <(jq -r 'keys[]' "$file")
+
+    labels+=("────────────────────────────────────────────────────────────")
+    labels+=("✎  Edit raw JSON (save & quit)")
+    labels+=("✓  Validate this config")
+    labels+=("←  Back")
+
+    choice=$(gum_choose "$id — $name  ·  $(dirname "$file")/config.json" "${labels[@]}")
+    case "$choice" in
+      "")
+        return 0
+        ;;
+      "✎"*)
+        edit_raw "$file" || true
+        ;;
+      "✓"*)
+        if is_valid "$file"; then
+          flash "Valid JSON."
+        else
+          warn "Invalid JSON."
+          pause
+        fi
+        ;;
+      "←"*)
+        return 0
+        ;;
+      "─"*)
+        continue
+        ;;
+      *)
+        key=${choice%% *}
+        if [[ -n $key ]]; then
+          edit_key "$file" "$id" "$key" || true
+        fi
+        ;;
+    esac
+  done
+}
+
+main_menu() {
+  local file id name count status choice
+  local -a labels
+
+  while true; do
+    clear
+    labels=()
+    for file in "${CONFIGS[@]}"; do
+      id=$(plugin_id "$file")
+      name=$(plugin_name "$file")
+      if is_valid "$file"; then
+        count=$(jq 'keys | length' "$file")
+        status="ok"
+      else
+        count="?"
+        status="INVALID"
+      fi
+      labels+=("$(printf '%-23s %-30s %3s keys  %s' "$id" "$(shorten "$name" 30)" "$count" "$status")")
+    done
+    labels+=("────────────────────────────────────────────────────────────")
+    labels+=("✓  Validate all configs")
+    labels+=("↻  Rescan plugins")
+    labels+=("✕  Quit")
+
+    choice=$(gum_choose "$APP — installed teyte.* plugins" "${labels[@]}")
+    case "$choice" in
+      "")
+        return 0
+        ;;
+      "✓"*)
+        if ! validate_all; then :; fi
+        pause
+        ;;
+      "↻"*)
+        if omarchy-shell shell rescanPlugins >/dev/null 2>&1; then
+          load_configs
+          flash "Plugins rescanned."
+        else
+          warn "Could not rescan plugins."
+          pause
+        fi
+        ;;
+      "✕"*)
+        return 0
+        ;;
+      "─"*)
+        continue
+        ;;
+      *)
+        id=${choice%% *}
+        for file in "${CONFIGS[@]}"; do
+          if [[ $(plugin_id "$file") == "$id" ]]; then
+            plugin_menu "$file"
+            break
+          fi
+        done
+        ;;
+    esac
+  done
+}
+
+main() {
+  local mode=interactive target="" file choice
+
+  while (( $# )); do
+    case "$1" in
+      --check)
+        mode=check
+        shift
+        ;;
+      --list)
+        mode=list
+        shift
+        ;;
+      --plugin)
+        (( $# >= 2 )) || die "--plugin needs a plugin id"
+        target=$2
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1 (try --help)"
+        ;;
+    esac
+  done
+
+  need_jq
+  [[ -d $PLUGIN_ROOT ]] || die "plugin directory not found: $PLUGIN_ROOT"
+  load_configs
+
+  case "$mode" in
+    check)
+      if validate_all; then
+        exit 0
+      else
+        exit 1
+      fi
+      ;;
+    list)
+      if list_configs; then
+        exit 0
+      else
+        exit 1
+      fi
+      ;;
+  esac
+
+  need_gum
+  (( ${#CONFIGS[@]} > 0 )) || die "no teyte configs found in $PLUGIN_ROOT"
+
+  if [[ -n $target ]]; then
+    for file in "${CONFIGS[@]}"; do
+      if [[ $(plugin_id "$file") == "$target" ]]; then
+        plugin_menu "$file"
+        exit 0
+      fi
+    done
+    die "no installed config for plugin: $target"
+  fi
+
+  main_menu
+}
+
+main "$@"

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "teyte.todo",
   "name": "Todo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "teyte",
-  "description": "Markdown task list rendered on the desktop. Click a task to toggle it.",
+  "description": "Markdown task list rendered on the desktop. Click a task to toggle it, or EDIT to open the file.",
   "kinds": ["service"],
   "keepLoaded": true,
   "entryPoints": {

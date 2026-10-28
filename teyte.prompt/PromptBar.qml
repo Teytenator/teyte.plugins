@@ -25,7 +25,7 @@ Item {
     yRatio: 0.93,
     xOffset: 0,
     yOffset: 0,
-    barLabel: "❯ ask agent…",
+    barLabel: "⌕ search web…",
     barNamespace: "teyte.prompt-bar"
   })
 
@@ -130,7 +130,7 @@ Item {
           Text {
             id: label
             anchors.centerIn: parent
-            text: root.settings.barLabel || "❯ ask agent…"
+            text: root.settings.barLabel || "⌕ search web…"
             color: root.specColor
             font.family: root.specFont
             font.pixelSize: root.specFontSize

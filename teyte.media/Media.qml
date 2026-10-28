@@ -20,7 +20,9 @@ Item {
     opacity: 1.0,
     xRatio: 0.75,
     yRatio: 0.5,
-    namespace: "teyte.media"
+    namespace: "teyte.media",
+    albumArt: true,
+    albumArtSize: 72
   })
 
   property var settings: root.defaults
@@ -48,24 +50,52 @@ Item {
   readonly property real xOffset: root.num(root.settings.xOffset, 0)
   readonly property real yOffset: root.num(root.settings.yOffset, 0)
 
+  readonly property bool showAlbumArt: root.settings.albumArt !== false
+  readonly property bool showArtFrame: root.showAlbumArt && root.activePlayer !== null
+  readonly property real albumArtSize: Math.max(32, Math.min(256, root.num(root.settings.albumArtSize, 72)))
+  readonly property string albumArtSource: root.normalizeArtUrl(root.trackArtUrl)
+
   property var activePlayer: null
   property string title: "Title"
   property string artist: "Artist"
   property string album: "Album"
+  property string trackArtUrl: ""
   property bool isPlaying: true
   property real position: 0
   property real length: 200
   property string idleText: "Nothing playing"
   property bool idle: false
 
+  function normalizeArtUrl(value) {
+    var url = String(value || "").trim()
+    if (url.length === 0) return ""
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url
+    if (url.charAt(0) === "/") return "file://" + url
+    return url
+  }
+
   function updateFromPlayer(p) {
     if (!p) return
+    root.idle = false
     root.title = p.trackTitle || ""
     root.artist = p.trackArtist || ""
     root.album = p.trackAlbum || ""
+    root.trackArtUrl = p.trackArtUrl || ""
     root.isPlaying = p.isPlaying
     root.position = p.position || 0
     root.length = p.length || 0
+  }
+
+  function clearPlayer() {
+    root.activePlayer = null
+    root.idle = true
+    root.title = root.idleText
+    root.artist = ""
+    root.album = ""
+    root.trackArtUrl = ""
+    root.isPlaying = false
+    root.position = 0
+    root.length = 0
   }
 
   function applyRaw(raw) {
@@ -100,8 +130,9 @@ Item {
         p.isPlayingChanged.connect(() => root.updateFromPlayer(root.findActivePlayer()))
       }
       root.updateFromPlayer(root.activePlayer)
+    } else if (root.activePlayer !== null || !root.idle) {
+      root.clearPlayer()
     }
-    // Keep placeholders when nothing is playing
   }
 
   Component.onCompleted: root.refresh()
@@ -167,46 +198,103 @@ Item {
             spacing: 4
             width: root.panelWidth
 
-            Text {
-              id: titleText
-              text: root.title
-              color: root.specColor
-              font.family: root.specFont
-              font.weight: Font.Bold
-              font.pixelSize: Math.max(8, root.specFontSize)
-              font.hintingPreference: Font.PreferFullHinting
-              opacity: root.specOpacity * 1.0
-              wrapMode: Text.NoWrap
+            Row {
+              id: headerRow
               width: root.panelWidth
-              elide: Text.ElideRight
-            }
+              spacing: root.showArtFrame ? 10 : 0
 
-            Text {
-              id: artistText
-              text: root.artist
-              visible: true
-              color: root.specColor
-              font.family: root.specFont
-              font.pixelSize: Math.max(8, root.specFontSize)
-              font.hintingPreference: Font.PreferFullHinting
-              opacity: root.specOpacity * 0.7
-              wrapMode: Text.NoWrap
-              width: root.panelWidth
-              elide: Text.ElideRight
-            }
+              Item {
+                id: artFrame
+                visible: root.showArtFrame
+                width: visible ? root.albumArtSize : 0
+                height: width
+                clip: true
 
-            Text {
-              id: albumText
-              text: root.album
-              visible: true
-              color: root.specColor
-              font.family: root.specFont
-              font.pixelSize: Math.max(8, root.specFontSize)
-              font.hintingPreference: Font.PreferFullHinting
-              opacity: root.specOpacity * 0.5
-              wrapMode: Text.NoWrap
-              width: root.panelWidth
-              elide: Text.ElideRight
+                Rectangle {
+                  anchors.fill: parent
+                  color: root.specColor
+                  opacity: 0.06 * root.specOpacity
+                  radius: 0
+                }
+
+                Image {
+                  id: coverArt
+                  anchors.fill: parent
+                  source: root.albumArtSource
+                  sourceSize.width: Math.max(1, Math.round(width * 2))
+                  sourceSize.height: Math.max(1, Math.round(height * 2))
+                  fillMode: Image.PreserveAspectCrop
+                  asynchronous: true
+                  cache: true
+                  mipmap: true
+                  smooth: true
+                  visible: root.albumArtSource.length > 0 && status === Image.Ready
+                }
+
+                Text {
+                  anchors.centerIn: parent
+                  visible: !coverArt.visible
+                  text: "♫"
+                  color: root.specColor
+                  opacity: 0.3 * root.specOpacity
+                  font.family: root.specFont
+                  font.pixelSize: Math.max(18, Math.round(artFrame.height * 0.42))
+                  font.hintingPreference: Font.PreferFullHinting
+                }
+              }
+
+              Column {
+                id: metadataCol
+                width: root.showArtFrame
+                  ? Math.max(60, headerRow.width - artFrame.width - headerRow.spacing)
+                  : headerRow.width
+                spacing: 2
+                y: root.showArtFrame
+                  ? Math.max(0, (root.albumArtSize - implicitHeight) / 2)
+                  : 0
+
+                Text {
+                  id: titleText
+                  text: root.title
+                  color: root.specColor
+                  font.family: root.specFont
+                  font.weight: Font.Bold
+                  font.pixelSize: Math.max(8, root.specFontSize)
+                  font.hintingPreference: Font.PreferFullHinting
+                  opacity: root.specOpacity * 1.0
+                  wrapMode: Text.NoWrap
+                  width: metadataCol.width
+                  elide: Text.ElideRight
+                }
+
+                Text {
+                  id: artistText
+                  text: root.artist
+                  visible: true
+                  color: root.specColor
+                  font.family: root.specFont
+                  font.pixelSize: Math.max(8, root.specFontSize)
+                  font.hintingPreference: Font.PreferFullHinting
+                  opacity: root.specOpacity * 0.7
+                  wrapMode: Text.NoWrap
+                  width: metadataCol.width
+                  elide: Text.ElideRight
+                }
+
+                Text {
+                  id: albumText
+                  text: root.album
+                  visible: true
+                  color: root.specColor
+                  font.family: root.specFont
+                  font.pixelSize: Math.max(8, root.specFontSize)
+                  font.hintingPreference: Font.PreferFullHinting
+                  opacity: root.specOpacity * 0.5
+                  wrapMode: Text.NoWrap
+                  width: metadataCol.width
+                  elide: Text.ElideRight
+                }
+              }
             }
 
             Item {
